@@ -20,7 +20,7 @@ export async function runAll() {
     } catch (e) {
       warn(`[${symbol}] Error: ${e.message}`);
     }
-    await sleep(1500); // 1.5s between symbols
+    await sleep(1500);
   }
   log('=== Scan complete ===');
 }
@@ -31,16 +31,16 @@ async function runSymbol(symbol, openPositionCount) {
   let candles4h, candles1d;
 
   try {
-    candles4h = await fetchOHLCV(symbol, '4h', 'okx', 250);
+    candles4h = await fetchOHLCV(symbol, '4h', null, 250);
   } catch (e) {
-    warn(`[${symbol}] 4h fetch failed: ${e.message}`);
+    warn(`[${symbol}] 4h fetch failed on all exchanges: ${e.message}`);
     return;
   }
 
   try {
-    candles1d = await fetchOHLCV(symbol, '1d', 'okx', 250);
+    candles1d = await fetchOHLCV(symbol, '1d', null, 250);
   } catch (e) {
-    warn(`[${symbol}] 1d fetch failed: ${e.message}`);
+    warn(`[${symbol}] 1d fetch failed on all exchanges: ${e.message}`);
     return;
   }
 

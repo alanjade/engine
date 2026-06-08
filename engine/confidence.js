@@ -32,8 +32,8 @@ export function calcConfidence({
   if (volumeRatio > 1.5)      score += 15;
   else if (volumeRatio >= 1.2) score += 10;
 
-  if (rsi >= 65 && rsi <= 70)      score += 10;
-  else if (rsi >= 55 && rsi < 65)  score += 7;
+  if (rsi >= 60 && rsi <= 70)      score += 10;
+  else if (rsi >= 50 && rsi < 60)  score += 7;
 
   if (cleanStructure)      score += 10;
   if (hasRejectionCandle)  score += 5;
