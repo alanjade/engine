@@ -44,7 +44,7 @@ export function evaluate({
   const price    = closes4h[closes4h.length - 1];
 
   // ── 1. Data validity ──────────────────────────────────────────────────────
-  if (!candles4h?.length || !candles1d?.length || candles4h.length < 250 || candles1d.length < 250)
+  if (!candles4h?.length || !candles1d?.length || candles4h.length < 100 || candles1d.length < 100)
     return none(symbol, 'Insufficient candle data.');
 
   // ── 2. Portfolio risk limits ──────────────────────────────────────────────

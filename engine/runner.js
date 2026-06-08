@@ -9,6 +9,8 @@ import { log, warn } from '../utils/logger.js';
 
 const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'TON/USDT', 'NEAR/USDT'];
 
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+
 export async function runAll() {
   log('=== Scan started ===');
   for (const symbol of SYMBOLS) {
@@ -18,6 +20,7 @@ export async function runAll() {
     } catch (e) {
       warn(`[${symbol}] Error: ${e.message}`);
     }
+    await sleep(1500); // 1.5s between symbols
   }
   log('=== Scan complete ===');
 }
