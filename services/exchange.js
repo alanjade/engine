@@ -31,23 +31,40 @@ function normalize(exchange, raw, limit) {
   let candles;
 
   if (exchange === 'binance') {
-    // [[openTime, o, h, l, c, v, ...], ...]
-    candles = raw.map(c => [+c[0], +c[1], +c[2], +c[3], +c[4], +c[5]]);
+    candles = raw.map(c => ({
+      timestamp: +c[0],
+      open:   +c[1],
+      high:   +c[2],
+      low:    +c[3],
+      close:  +c[4],
+      volume: +c[5],
+    }));
 
   } else if (exchange === 'bybit') {
-    // { result: { list: [[time, o, h, l, c, v], ...] } } — newest first
     candles = raw.result.list
-      .map(c => [+c[0], +c[1], +c[2], +c[3], +c[4], +c[5]])
+      .map(c => ({
+        timestamp: +c[0],
+        open:   +c[1],
+        high:   +c[2],
+        low:    +c[3],
+        close:  +c[4],
+        volume: +c[5],
+      }))
       .reverse();
 
   } else if (exchange === 'okx') {
-    // { data: [[ts, o, h, l, c, vol, ...], ...] } — newest first
     candles = raw.data
-      .map(c => [+c[0], +c[1], +c[2], +c[3], +c[4], +c[5]])
+      .map(c => ({
+        timestamp: +c[0],
+        open:   +c[1],
+        high:   +c[2],
+        low:    +c[3],
+        close:  +c[4],
+        volume: +c[5],
+      }))
       .reverse();
   }
 
-  // Trim to requested limit (proxy fetches 500, engine wants 250)
   return candles.slice(-limit);
 }
 
@@ -56,7 +73,6 @@ function normalize(exchange, raw, limit) {
  * Falls back gracefully — just reads close of latest candle if ticker not needed.
  */
 export async function fetchTicker(symbol, exchange = 'binance') {
-  // Reuse OHLCV — last candle close is close enough for signal logic
   const candles = await fetchOHLCV(symbol, '1d', exchange, 1);
-  return { last: candles.at(-1)[4] };
+  return { last: candles.at(-1).close };
 }
