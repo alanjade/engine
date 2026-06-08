@@ -8,8 +8,11 @@ const TF_MAP = {
   okx:     { '4h': '4H',  '1d': '1D' },
 };
 
-export async function fetchOHLCV(symbol, timeframe, exchange = 'bybit', limit = 250) {
-  const sym = symbol.replace('/', '');
+export async function fetchOHLCV(symbol, timeframe, exchange = 'okx', limit = 250) {
+  const sym = exchange === 'okx'
+    ? symbol.replace('/', '-')
+    : symbol.replace('/', '');
+
   const tf  = TF_MAP[exchange]?.[timeframe] ?? timeframe;
   const url = `${PROXY}?exchange=${exchange}&sym=${sym}&tf=${tf}`;
 
@@ -66,7 +69,7 @@ function normalize(exchange, raw, limit) {
   return candles.slice(-limit);
 }
 
-export async function fetchTicker(symbol, exchange = 'bybit') {
+export async function fetchTicker(symbol, exchange = 'okx') {
   const candles = await fetchOHLCV(symbol, '1d', exchange, 1);
   return { last: candles.at(-1).close };
 }

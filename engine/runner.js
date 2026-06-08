@@ -28,14 +28,14 @@ async function runSymbol(symbol, openPositionCount) {
   let candles4h, candles1d;
 
   try {
-    candles4h = await fetchOHLCV(symbol, '4h', 'bybit', 250);
+    candles4h = await fetchOHLCV(symbol, '4h', 'okx', 250);
   } catch (e) {
     warn(`[${symbol}] 4h fetch failed: ${e.message}`);
     return;
   }
 
   try {
-    candles1d = await fetchOHLCV(symbol, '1d', 'bybit', 250);
+    candles1d = await fetchOHLCV(symbol, '1d', 'okx', 250);
   } catch (e) {
     warn(`[${symbol}] 1d fetch failed: ${e.message}`);
     return;
