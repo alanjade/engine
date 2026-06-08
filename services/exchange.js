@@ -1,6 +1,6 @@
 import { log } from '../utils/logger.js';
 
-const PROXY = 'https://terminal.ayodejialalade29.workers.dev';
+const PROXY = 'https://swing.ayodejialalade29.workers.dev';
 
 const TF_MAP = {
   binance: { '4h': '4h',  '1d': '1d' },
