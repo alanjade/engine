@@ -10,7 +10,6 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",
-    "ccxt": "^4.5.56",
     "node-cron": "^3.0.3",
     "technicalindicators": "^3.1.0"
   }

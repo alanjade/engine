@@ -7,20 +7,18 @@ import {
 import { evaluate } from './signal.js';
 import { log, warn } from '../utils/logger.js';
 
-const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT'];
+const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'TON/USDT', 'NEAR/USDT'];
 
 export async function runAll() {
   log('=== Scan started ===');
-  const openCount = await countOpenPositions();
-
   for (const symbol of SYMBOLS) {
     try {
+      const openCount = await countOpenPositions(); // fresh count each iteration
       await runSymbol(symbol, openCount);
     } catch (e) {
       warn(`[${symbol}] Error:`, e.message);
     }
   }
-
   log('=== Scan complete ===');
 }
 

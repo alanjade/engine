@@ -5,10 +5,12 @@ import { calcConfidence } from './confidence.js';
 import { ENV } from '../utils/env.js';
 
 const ATR_MIN = {
-  'BTC/USDT': 0.8,
-  'ETH/USDT': 1.0,
-  'BNB/USDT': 1.2,
-  'SOL/USDT': 1.5,
+  'BTC/USDT':  0.8,
+  'ETH/USDT':  1.0,
+  'BNB/USDT':  1.2,
+  'SOL/USDT':  1.5,
+  'TON/USDT':  2.0,
+  'NEAR/USDT': 2.5,
 };
 
 function signalId(symbol, now) {
