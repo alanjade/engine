@@ -26,10 +26,10 @@ async function runSymbol(symbol, openPositionCount) {
   log(`[${symbol}] Evaluating...`);
 
  const [candles4h, candles1d] = await Promise.all([
-    fetchOHLCV(symbol, '4h', 'binance', 250),
-    fetchOHLCV(symbol, '1d', 'binance', 250),
+    fetchOHLCV(symbol, '4h', 'bybit', 250),
+    fetchOHLCV(symbol, '1d', 'bybit', 250),
   ]);
-  
+
   const position = await getPosition(symbol);
   const result   = evaluate({ symbol, candles4h, candles1d, position, openPositionCount });
 
