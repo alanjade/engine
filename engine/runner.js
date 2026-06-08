@@ -7,7 +7,17 @@ import {
 import { evaluate } from './signal.js';
 import { log, warn } from '../utils/logger.js';
 
-const SYMBOLS = ['BTC/USDT', 'ETH/USDT', 'BNB/USDT', 'SOL/USDT', 'TON/USDT', 'NEAR/USDT'];
+const SYMBOLS = [
+  'BTC/USDT',
+  'ETH/USDT',
+  'BNB/USDT',
+  'XRP/USDT',
+  'DOGE/USDT',
+  'ADA/USDT',
+  'AVAX/USDT',
+  'TON/USDT',
+  'NEAR/USDT',
+];
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 

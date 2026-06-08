@@ -5,22 +5,13 @@ import { calcConfidence } from './confidence.js';
 import { ENV } from '../utils/env.js';
 
 // ── Per-symbol configuration ──────────────────────────────────────────────────
-//
-//  atrMin        — minimum ATR% for the symbol to have enough volatility
-//  emaDistMin    — minimum 4H EMA50/200 distance % to confirm trend momentum
-//  rsiMin/Max    — RSI buy zone (wider for volatile alts, tighter for BTC)
-//  supportLookback — candles to scan for S/R pivots (more = older, stronger levels)
-//  supProximity  — max % price can be above support to still qualify
-//  minRR         — minimum risk/reward ratio
-//  volRatioMin   — minimum volume ratio vs 20-SMA
-//
 const SYMBOL_CONFIG = {
   'BTC/USDT': {
-    atrMin:          0.6,   // BTC moves less % per candle
-    emaDistMin:      1.2,   // strong trend = clear separation
+    atrMin:          0.6,
+    emaDistMin:      1.2,
     rsiMin:          52,
     rsiMax:          72,
-    supportLookback: 120,   // BTC has deep, well-respected levels
+    supportLookback: 120,
     supProximity:    2.5,
     minRR:           1.5,
     volRatioMin:     1.2,
@@ -45,8 +36,38 @@ const SYMBOL_CONFIG = {
     minRR:           1.4,
     volRatioMin:     1.1,
   },
-  'SOL/USDT': {
-    atrMin:          1.2,   // SOL is volatile — needs real movement
+  'XRP/USDT': {
+    atrMin:          1.0,   // XRP moves in sharp bursts
+    emaDistMin:      0.8,
+    rsiMin:          48,
+    rsiMax:          74,
+    supportLookback: 100,   // XRP respects historical levels well
+    supProximity:    3.0,
+    minRR:           1.5,
+    volRatioMin:     1.15,
+  },
+  'DOGE/USDT': {
+    atrMin:          1.5,   // DOGE is meme-volatile, needs real ATR
+    emaDistMin:      0.7,
+    rsiMin:          46,
+    rsiMax:          74,
+    supportLookback: 80,
+    supProximity:    4.0,   // DOGE gaps away from support often
+    minRR:           1.6,   // higher RR needed for meme risk
+    volRatioMin:     1.2,   // volume confirmation critical for DOGE
+  },
+  'ADA/USDT': {
+    atrMin:          1.0,
+    emaDistMin:      0.8,
+    rsiMin:          48,
+    rsiMax:          73,
+    supportLookback: 100,   // ADA has clean, respected S/R
+    supProximity:    3.0,
+    minRR:           1.5,
+    volRatioMin:     1.1,
+  },
+  'AVAX/USDT': {
+    atrMin:          1.5,
     emaDistMin:      0.8,
     rsiMin:          48,
     rsiMax:          74,
@@ -57,12 +78,12 @@ const SYMBOL_CONFIG = {
   },
   'TON/USDT': {
     atrMin:          1.5,
-    emaDistMin:      0.6,   // lower liquidity = EMAs stay closer
+    emaDistMin:      0.6,
     rsiMin:          46,
     rsiMax:          75,
     supportLookback: 70,
-    supProximity:    4.0,   // can gap away from support quickly
-    minRR:           1.6,   // need better RR for lower liquidity
+    supProximity:    4.0,
+    minRR:           1.6,
     volRatioMin:     1.1,
   },
   'NEAR/USDT': {
@@ -77,7 +98,6 @@ const SYMBOL_CONFIG = {
   },
 };
 
-// Fallback for any symbol not in the table
 const DEFAULT_CONFIG = {
   atrMin:          1.0,
   emaDistMin:      1.0,
@@ -117,8 +137,8 @@ function none(symbol, reason) {
 // ── Main evaluate ─────────────────────────────────────────────────────────────
 
 export function evaluate({ symbol, candles4h, candles1d, position, openPositionCount }) {
-  const now    = new Date();
-  const c      = cfg(symbol);
+  const now      = new Date();
+  const c        = cfg(symbol);
   const closes4h = candles4h.map(x => x.close);
   const price    = closes4h[closes4h.length - 1];
 
