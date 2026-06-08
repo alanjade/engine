@@ -13,10 +13,10 @@ export async function runAll() {
   log('=== Scan started ===');
   for (const symbol of SYMBOLS) {
     try {
-      const openCount = await countOpenPositions(); // fresh count each iteration
+      const openCount = await countOpenPositions();
       await runSymbol(symbol, openCount);
     } catch (e) {
-      warn(`[${symbol}] Error:`, e.message);
+      warn(`[${symbol}] Error: ${e.message}`);
     }
   }
   log('=== Scan complete ===');
@@ -25,10 +25,21 @@ export async function runAll() {
 async function runSymbol(symbol, openPositionCount) {
   log(`[${symbol}] Evaluating...`);
 
- const [candles4h, candles1d] = await Promise.all([
-    fetchOHLCV(symbol, '4h', 'bybit', 250),
-    fetchOHLCV(symbol, '1d', 'bybit', 250),
-  ]);
+  let candles4h, candles1d;
+
+  try {
+    candles4h = await fetchOHLCV(symbol, '4h', 'bybit', 250);
+  } catch (e) {
+    warn(`[${symbol}] 4h fetch failed: ${e.message}`);
+    return;
+  }
+
+  try {
+    candles1d = await fetchOHLCV(symbol, '1d', 'bybit', 250);
+  } catch (e) {
+    warn(`[${symbol}] 1d fetch failed: ${e.message}`);
+    return;
+  }
 
   const position = await getPosition(symbol);
   const result   = evaluate({ symbol, candles4h, candles1d, position, openPositionCount });
@@ -37,13 +48,11 @@ async function runSymbol(symbol, openPositionCount) {
 
   if (result.signal === 'NONE') return;
 
-  // ── Dedup check ───────────────────────────────────────────────────────────
   if (result.signal === 'BUY') {
     if (await isDuplicate(symbol, 'BUY', result.support)) {
       warn(`[${symbol}] Duplicate BUY suppressed.`);
       return;
     }
-
     await saveSignal(result);
     await upsertPosition({
       symbol,
@@ -54,7 +63,6 @@ async function runSymbol(symbol, openPositionCount) {
       size:        result.position_size,
       remaining:   100,
     });
-
     await sendAlert(formatBuyAlert(result));
   }
 
@@ -69,7 +77,6 @@ async function runSymbol(symbol, openPositionCount) {
       size:        position.size,
       remaining:   0,
     });
-
     await sendAlert(formatSellAlert(result));
   }
 
