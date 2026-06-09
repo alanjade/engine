@@ -3,11 +3,12 @@ import { log, warn } from '../utils/logger.js';
 const PROXY = 'https://swing.ayodejialalade29.workers.dev';
 
 const TF_MAP = {
+  binance: { '4h': '4h', '1d': '1d' },
   okx:   { '4h': '4H', '1d': '1D' },
   bybit: { '4h': '240', '1d': 'D' },
 };
 
-const EXCHANGE_ORDER = ['okx', 'bybit'];
+const EXCHANGE_ORDER = ['binance', 'okx', 'bybit'];
 const MIN_CANDLES    = 100;
 
 export async function fetchOHLCV(symbol, timeframe, exchange = null, limit = 250) {
@@ -70,7 +71,18 @@ async function fetchFromExchange(symbol, timeframe, exchange, limit) {
 function normalize(exchange, raw, limit) {
   let candles;
 
-  if (exchange === 'okx') {
+  if (exchange === 'binance') {
+    if (!Array.isArray(raw)) throw new Error('Binance: unexpected response shape');
+    candles = raw.map(c => ({
+      timestamp: +c[0],
+      open:      +c[1],
+      high:      +c[2],
+      low:       +c[3],
+      close:     +c[4],
+      volume:    +c[5],
+    }));
+
+  } else if (exchange === 'okx') {
     if (!raw?.data) throw new Error('OKX: unexpected response shape');
     candles = raw.data
       .map(c => ({

@@ -30,7 +30,7 @@ export async function runAll() {
     } catch (e) {
       warn(`[${symbol}] Error: ${e.message}`);
     }
-    await sleep(1500);
+    await sleep(2500);
   }
   log('=== Scan complete ===');
 }
