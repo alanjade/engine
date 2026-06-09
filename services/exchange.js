@@ -1,7 +1,6 @@
 import { log, warn } from '../utils/logger.js';
 
 const PROXY = 'https://swing.ayodejialalade29.workers.dev';
-console.log('exchange param:', JSON.stringify(exchange));
 
 const TF_MAP = {
   binance: { '4h': '4h', '1d': '1d' },
