@@ -8,7 +8,7 @@ const TF_MAP = {
   bybit: { '4h': '240', '1d': 'D' },
 };
 
-const EXCHANGE_ORDER = ['binance', 'okx', 'bybit'];
+const EXCHANGE_ORDER = [ 'okx', 'binance', 'bybit'];
 const MIN_CANDLES    = 100;
 
 export async function fetchOHLCV(symbol, timeframe, exchange = null, limit = 250) {
