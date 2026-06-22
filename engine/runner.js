@@ -15,7 +15,7 @@ const SYMBOLS = [
   'DOGE/USDT',
   'ADA/USDT',
   'AVAX/USDT',
-  'TON/USDT',
+  'GRAM/USDT',
   'NEAR/USDT',
 ];
 

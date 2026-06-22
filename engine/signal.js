@@ -76,7 +76,7 @@ const SYMBOL_CONFIG = {
     minRR:           1.5,
     volRatioMin:     1.1,
   },
-  'TON/USDT': {
+  'GRAM/USDT': {
     atrMin:          1.5,
     emaDistMin:      0.6,
     rsiMin:          46,
