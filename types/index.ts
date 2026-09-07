@@ -32,6 +32,19 @@ export interface Position {
   resistance?: number | null;
 }
 
+export type MarketRegime =
+  | 'STRONG_UPTREND' | 'WEAK_UPTREND' | 'RANGE'
+  | 'WEAK_DOWNTREND' | 'STRONG_DOWNTREND'
+  | 'COMPRESSION' | 'HIGH_VOLATILITY';
+
+export interface RegimeResult {
+  regime: MarketRegime;
+  strength: number; // 0-100, confidence in the classification
+  atrPct: number;
+  emaSlope: number; // % change in EMA50 over the lookback window
+  emaDistPct: number; // % distance between EMA50 and EMA200
+}
+
 export interface StoredPosition {
   symbol: string;
   status: 'OPEN' | 'CLOSED' | 'NONE';

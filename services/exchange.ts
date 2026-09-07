@@ -6,15 +6,26 @@ import type { Candle, ExchangeName, Ticker } from '../types/index.js';
 // REST APIs directly — no proxy, no staleness from reusing a 1D candle close.
 const PROXY = 'https://swing.ayodejialalade29.workers.dev';
 
-const TF_MAP: Record<ExchangeName, Record<'4h' | '1d', string>> = {
-  bybit: { '4h': '240', '1d': 'D' },
-  okx: { '4h': '4H', '1d': '1D' },
-  bitget: { '4h': '4hour', '1d': '1day' },
-  gate: { '4h': '4h', '1d': '1d' },
+export type Timeframe = '15m' | '1h' | '4h' | '1d';
+
+const TF_MAP: Record<ExchangeName, Record<Timeframe, string>> = {
+  bybit:  { '15m': '15',    '1h': '60',   '4h': '240',    '1d': 'D' },
+  okx:    { '15m': '15m',   '1h': '1H',   '4h': '4H',     '1d': '1D' },
+  bitget: { '15m': '15min', '1h': '1h',   '4h': '4hour',  '1d': '1day' },
+  gate:   { '15m': '15m',   '1h': '1h',   '4h': '4h',     '1d': '1d' },
+};
+
+// Minimum viable candle counts differ by timeframe — 100 4h candles is ~17
+// days, but 100 15m candles is only ~1 day, which isn't enough for a
+// meaningful EMA200. Require enough history relative to the longest EMA used.
+const MIN_CANDLES: Record<Timeframe, number> = {
+  '15m': 220,
+  '1h': 220,
+  '4h': 100,
+  '1d': 100,
 };
 
 const EXCHANGE_ORDER: ExchangeName[] = ['bybit', 'gate', 'bitget', 'okx'];
-const MIN_CANDLES = 100;
 
 function formatSymSlash(symbol: string, exchange: ExchangeName): string {
   if (exchange === 'okx') return symbol.replace('/', '-');
@@ -39,22 +50,23 @@ function classifyHttpError(status: number, body: string): Error {
 
 export async function fetchOHLCV(
   symbol: string,
-  timeframe: '4h' | '1d',
+  timeframe: Timeframe,
   exchange: ExchangeName | null = null,
   limit = 250,
 ): Promise<Candle[]> {
   const order = exchange ? [exchange, ...EXCHANGE_ORDER.filter(e => e !== exchange)] : EXCHANGE_ORDER;
+  const minCandles = MIN_CANDLES[timeframe];
 
   let lastError: Error | undefined;
 
   for (const ex of order) {
     try {
       const candles = await fetchOHLCVFromExchange(symbol, timeframe, ex, limit);
-      if (candles.length >= MIN_CANDLES) {
+      if (candles.length >= minCandles) {
         if (ex !== order[0]) log(`[${symbol}] Fallback used: ${ex}`);
         return candles;
       }
-      warn(`[${symbol}] ${ex} only returned ${candles.length} candles — trying next`);
+      warn(`[${symbol}] ${ex} only returned ${candles.length}/${minCandles} candles — trying next`);
     } catch (e) {
       const err = e instanceof Error ? e : new Error(String(e));
       const reason = err.message.includes('geo_blocked') ? 'geo-blocked'
@@ -70,7 +82,7 @@ export async function fetchOHLCV(
 
 async function fetchOHLCVFromExchange(
   symbol: string,
-  timeframe: '4h' | '1d',
+  timeframe: Timeframe,
   exchange: ExchangeName,
   limit: number,
 ): Promise<Candle[]> {
@@ -133,6 +145,79 @@ function normalizeOHLCV(exchange: ExchangeName, raw: unknown, limit: number): Ca
 
   candles.sort((a, b) => a.timestamp - b.timestamp);
   return candles.slice(-limit);
+}
+
+// ── Multi-timeframe fetch with caching ─────────────────────────────────────────
+//
+// Reusable across the runner for any set of timeframes. Cache TTL scales with
+// timeframe granularity — no reason to re-hit the proxy for 1D candles every
+// 5-minute fast-scan tick.
+
+const CACHE_TTL_MS: Record<Timeframe, number> = {
+  '15m': 2 * 60 * 1000,
+  '1h': 5 * 60 * 1000,
+  '4h': 15 * 60 * 1000,
+  '1d': 60 * 60 * 1000,
+};
+
+interface CacheEntry {
+  candles: Candle[];
+  fetchedAt: number;
+}
+
+const cache = new Map<string, CacheEntry>();
+
+function cacheKey(symbol: string, timeframe: Timeframe): string {
+  return `${symbol}:${timeframe}`;
+}
+
+/** Fetch OHLCV for one timeframe, reusing a cached result within its TTL. */
+export async function fetchOHLCVCached(
+  symbol: string,
+  timeframe: Timeframe,
+  exchange: ExchangeName | null = null,
+  limit = 250,
+): Promise<Candle[]> {
+  const key = cacheKey(symbol, timeframe);
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS[timeframe]) {
+    return cached.candles;
+  }
+
+  const candles = await fetchOHLCV(symbol, timeframe, exchange, limit);
+  cache.set(key, { candles, fetchedAt: Date.now() });
+  return candles;
+}
+
+export type MultiTimeframeCandles = Partial<Record<Timeframe, Candle[]>>;
+
+/**
+ * Fetch several timeframes for one symbol, tolerating partial failure:
+ * a timeframe that fails on every exchange is omitted from the result
+ * (not thrown), so callers can decide what to do with incomplete data
+ * instead of losing every timeframe because one was unavailable.
+ */
+export async function fetchMultiTimeframe(
+  symbol: string,
+  timeframes: Timeframe[],
+  exchange: ExchangeName | null = null,
+  limit = 250,
+): Promise<MultiTimeframeCandles> {
+  const result: MultiTimeframeCandles = {};
+
+  await Promise.all(timeframes.map(async tf => {
+    try {
+      result[tf] = await fetchOHLCVCached(symbol, tf, exchange, limit);
+    } catch (e) {
+      warn(`[${symbol}] ${tf} unavailable on all exchanges: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }));
+
+  return result;
+}
+
+export function clearOHLCVCache(): void {
+  cache.clear();
 }
 
 // ── Ticker (fixed: direct exchange REST calls, real current price) ────────────

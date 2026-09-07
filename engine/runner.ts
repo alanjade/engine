@@ -1,4 +1,4 @@
-import { fetchOHLCV } from '../services/exchange.js';
+import { fetchMultiTimeframe } from '../services/exchange.js';
 import { sendAlert, formatBuyAlert, formatSellAlert, formatHoldAlert } from '../services/telegram.js';
 import { saveSignal, isDuplicate, getPosition, upsertPosition, countOpenPositions } from '../services/store.js';
 import { evaluate } from './signal.js';
@@ -28,15 +28,21 @@ export async function runAll(): Promise<void> {
 async function runSymbol(symbol: string, openPositionCount: number): Promise<void> {
   log(`[${symbol}] Evaluating...`);
 
-  let candles4h;
-  let candles1d;
-  try {
-    candles4h = await fetchOHLCV(symbol, '4h', null, 250);
-    candles1d = await fetchOHLCV(symbol, '1d', null, 250);
-  } catch (error) {
-    warn(`[${symbol}] Candle fetch failed: ${error instanceof Error ? error.message : String(error)}`);
+  // Pulls all four timeframes now so Phase 3+ (regime/structure/setup logic)
+  // has 1H/15M available without touching the fetch layer again. Scoring
+  // still only consumes 4h/1d until that logic lands.
+  const tf = await fetchMultiTimeframe(symbol, ['1d', '4h', '1h', '15m'], null, 250);
+
+  if (!tf['4h'] || !tf['1d']) {
+    warn(`[${symbol}] Missing required timeframe (4h: ${!!tf['4h']}, 1d: ${!!tf['1d']}) — skipping.`);
     return;
   }
+  if (!tf['1h'] || !tf['15m']) {
+    warn(`[${symbol}] 1h/15m unavailable this cycle — proceeding on 4h/1d only.`);
+  }
+
+  const candles4h = tf['4h'];
+  const candles1d = tf['1d'];
 
   const storedPosition = await getPosition(symbol);
   const position: Position = {
