@@ -15,7 +15,7 @@ if (existsSync('.env')) {
 
 export const ENV = {
   TELEGRAM_BOT_TOKEN: process.env.TELEGRAM_BOT_TOKEN ?? '',
-  TELEGRAM_CHAT_ID:   process.env.TELEGRAM_CHAT_ID   ?? '',
-  ACCOUNT_EQUITY:     parseFloat(process.env.ACCOUNT_EQUITY ?? '10000'),
+  TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID ?? '',
+  ACCOUNT_EQUITY: parseFloat(process.env.ACCOUNT_EQUITY ?? '10000'),
   RUN_INTERVAL_MINUTES: parseInt(process.env.RUN_INTERVAL_MINUTES ?? '240', 10),
 };

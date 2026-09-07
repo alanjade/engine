@@ -1,38 +1,40 @@
-import {
-  EMA as TIema,
-  RSI as TIrsi,
-  ATR as TIatr,
-} from 'technicalindicators';
+import { EMA as TIema, RSI as TIrsi, ATR as TIatr } from 'technicalindicators';
+import type { Candle } from '../types/index.js';
 
-export function calcEMA(closes, period) {
+export function calcEMA(closes: number[], period: number): number | null {
   const result = TIema.calculate({ period, values: closes });
   return result[result.length - 1] ?? null;
 }
 
-export function calcRSI(closes, period = 14) {
+export function calcRSI(closes: number[], period = 14): number | null {
   const result = TIrsi.calculate({ period, values: closes });
   return result[result.length - 1] ?? null;
 }
 
-export function calcATR(candles, period = 14) {
-  const highs  = candles.map(c => c.high);
-  const lows   = candles.map(c => c.low);
-  const closes = candles.map(c => c.close);
-  const result = TIatr.calculate({ period, high: highs, low: lows, close: closes });
+export function calcATR(candles: Candle[], period = 14): number | null {
+  const high = candles.map(c => c.high);
+  const low = candles.map(c => c.low);
+  const close = candles.map(c => c.close);
+  const result = TIatr.calculate({ period, high, low, close });
   return result[result.length - 1] ?? null;
 }
 
-export function calcVolumeSMA(candles, period = 20) {
+export function calcVolumeSMA(candles: Candle[], period = 20): number | null {
   const vols = candles.map(c => c.volume).slice(-period);
   if (vols.length < period) return null;
   return vols.reduce((a, b) => a + b, 0) / period;
 }
 
-export function emaCrossCount(candles, period1 = 50, period2 = 200, lookback = 20) {
+export function emaCrossCount(
+  candles: Candle[],
+  period1 = 50,
+  period2 = 200,
+  lookback = 20,
+): number {
   const recent = candles.slice(-lookback - period2);
   const closes = recent.map(c => c.close);
   let crosses = 0;
-  let prev = null;
+  let prev: boolean | null = null;
   for (let i = period2; i < closes.length; i++) {
     const slice = closes.slice(0, i + 1);
     const e1 = calcEMA(slice, period1);

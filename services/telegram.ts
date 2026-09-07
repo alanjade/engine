@@ -1,9 +1,10 @@
 import { ENV } from '../utils/env.js';
 import { log, err } from '../utils/logger.js';
+import type { BuySignal, SellSignal, HoldSignal } from '../types/index.js';
 
 const API = `https://api.telegram.org/bot${ENV.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
-export async function sendAlert(text) {
+export async function sendAlert(text: string): Promise<void> {
   if (!ENV.TELEGRAM_BOT_TOKEN || !ENV.TELEGRAM_CHAT_ID) {
     log('[TELEGRAM] Skipped — no credentials configured.');
     return;
@@ -12,21 +13,17 @@ export async function sendAlert(text) {
     const res = await fetch(API, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        chat_id: ENV.TELEGRAM_CHAT_ID,
-        text,
-        parse_mode: 'Markdown',
-      }),
+      body: JSON.stringify({ chat_id: ENV.TELEGRAM_CHAT_ID, text, parse_mode: 'Markdown' }),
     });
-    const json = await res.json();
+    const json = (await res.json()) as { ok: boolean; description?: string };
     if (!json.ok) err('[TELEGRAM] API error:', json.description);
     else log('[TELEGRAM] Alert sent.');
   } catch (e) {
-    err('[TELEGRAM] Fetch failed:', e.message);
+    err('[TELEGRAM] Fetch failed:', e instanceof Error ? e.message : String(e));
   }
 }
 
-export function formatBuyAlert(sig) {
+export function formatBuyAlert(sig: BuySignal): string {
   return (
     `🟢 *SWING BUY SIGNAL*\n\n` +
     `Pair: ${sig.symbol}\n` +
@@ -43,7 +40,7 @@ export function formatBuyAlert(sig) {
   );
 }
 
-export function formatSellAlert(sig) {
+export function formatSellAlert(sig: SellSignal): string {
   return (
     `🔴 *SWING SELL SIGNAL*\n\n` +
     `Pair: ${sig.symbol}\n` +
@@ -55,7 +52,7 @@ export function formatSellAlert(sig) {
   );
 }
 
-export function formatHoldAlert(sig) {
+export function formatHoldAlert(sig: HoldSignal): string {
   return (
     `🟡 *POSITION UPDATE*\n\n` +
     `Pair: ${sig.symbol}\n` +
