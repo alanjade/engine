@@ -1,4 +1,4 @@
-import type { Level, SymbolConfig } from '../types/index.js';
+import type { Level, SymbolConfig, TakeProfitLevels } from '../types/index.js';
 
 export interface StopLossResult {
   ok: boolean;
@@ -63,15 +63,6 @@ export function calcPositionSize(accountEquity: number, entry: number, stopLoss:
     throw new Error(`Invalid risk per unit (${risk}) — stop-loss must be below entry.`);
   }
   return Math.round(((accountEquity * riskPct) / risk) * 100) / 100;
-}
-
-export interface TakeProfitLevels {
-  tp1: number; // 1R — first partial, de-risks the trade
-  tp2: number; // anchored to the nearest resistance when it clears 1R, otherwise 2R
-  tp3: number; // extension beyond tp2 for the runner portion
-  rr1: number;
-  rr2: number;
-  rr3: number;
 }
 
 /**
