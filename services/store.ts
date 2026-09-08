@@ -33,6 +33,32 @@ export async function saveSignal(sig: SignalResult): Promise<void> {
   }), 'saveSignal');
 }
 
+// Logs a decideEntry/decideExit result. Kept separate from saveSignal above
+// because that function's type is tied to the legacy BuySignal/SellSignal/
+// HoldSignal union — reusing it here would mean lying to the type checker
+// about what a TradeState decision is. Same `signals` table/columns; the
+// `signal` column just holds ENTER/WAIT/AVOID/EXIT instead of BUY/SELL/HOLD.
+export async function saveDecision(input: {
+  symbol: string;
+  state: 'ENTER' | 'WAIT' | 'AVOID' | 'EXIT';
+  entry: number | null;
+  stopLoss: number | null;
+  takeProfit: number | null;
+  confidence: number | null;
+}): Promise<void> {
+  await query(() => db.from('signals').insert({
+    signal_id: null,
+    timestamp: new Date().toISOString(),
+    symbol: input.symbol,
+    signal: input.state,
+    entry: input.entry,
+    stop_loss: input.stopLoss,
+    take_profit: input.takeProfit,
+    support: input.entry, // reused as the dedup band anchor for isDuplicate()
+    confidence: input.confidence,
+  }), 'saveDecision');
+}
+
 export async function getRecentSignals(symbol: string, hours = 24): Promise<any[]> {
   const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
   const data = await query<any[]>(() =>

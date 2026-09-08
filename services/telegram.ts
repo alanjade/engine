@@ -1,6 +1,6 @@
 import { ENV } from '../utils/env.js';
 import { log, err } from '../utils/logger.js';
-import type { BuySignal, SellSignal, HoldSignal, EntryDecision, ExitDecision } from '../types/index.js';
+import type { BuySignal, SellSignal, HoldSignal, EntryDecision, ExitDecision, ManagedPosition } from '../types/index.js';
 
 const API = `https://api.telegram.org/bot${ENV.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
@@ -147,6 +147,22 @@ export function formatAvoidAlert(symbol: string, decision: EntryDecision): strin
     `Reason: ${decision.reasons.join(' ')}` +
     chaseWarning +
     rrWarning
+  );
+}
+
+// Not one of the original Phase 15 formats (ENTER/WAIT/AVOID/EXIT) — added
+// alongside the position-management wiring, since a partial TP or a
+// trailing-stop raise is neither a fresh ENTER nor a full EXIT but is still
+// worth surfacing.
+export function formatPositionUpdateAlert(symbol: string, position: ManagedPosition, actions: string[]): string {
+  return (
+    `🔵 *POSITION UPDATE* — ${symbol}\n\n` +
+    `Remaining: ${position.remainingPct}%\n` +
+    `Stop: $${position.stopLoss.toFixed(4)}\n` +
+    `TP1: $${position.tp1.toFixed(4)}${position.tp1Hit ? ' ✓' : ''}\n` +
+    `TP2: $${position.tp2.toFixed(4)}${position.tp2Hit ? ' ✓' : ''}\n` +
+    `TP3: $${position.tp3.toFixed(4)}\n\n` +
+    `${actions.join('\n')}`
   );
 }
 

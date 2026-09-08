@@ -54,6 +54,18 @@ export interface StoredPosition {
   size: number | null;
   remaining: number | null;
   resistance?: number | null;
+  // ── Position-management state (Phase 12), persisted so partial-TP/
+  // break-even/trailing-stop progress survives across scan cycles rather
+  // than resetting every run. Optional so rows written before this field
+  // existed still deserialize — runner.ts falls back to degraded (no
+  // partials, single-target) handling when these are absent.
+  tp1?: number | null;
+  tp2?: number | null;
+  tp3?: number | null;
+  highest_price?: number | null;
+  tp1_hit?: boolean | null;
+  tp2_hit?: boolean | null;
+  break_even_activated?: boolean | null;
 }
 
 export interface SignalBase {

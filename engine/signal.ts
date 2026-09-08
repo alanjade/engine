@@ -3,32 +3,15 @@ import { nearestSupport, nearestResistance, supportScore, resistanceScore } from
 import { hasConfirmationPattern, isBearishRejection } from './candles.js';
 import { calcConfidence } from './confidence.js';
 import { calcStopLoss, calcPositionSize } from './risk.js';
+import { cfg } from './config.js';
 import { ENV } from '../utils/env.js';
 import type {
-  Candle, SymbolConfig, Position, EvaluateInput, EvaluateResult, SellEvaluateResult,
+  Candle, Position, EvaluateInput, EvaluateResult, SellEvaluateResult,
 } from '../types/index.js';
 
-// ── Per-symbol configuration ──────────────────────────────────────────────────
-const SYMBOL_CONFIG: Record<string, SymbolConfig> = {
-  'BTC/USDT':  { atrMin: 0.6, emaDistMin: 1.2, rsiMin: 52, rsiMax: 72, supportLookback: 120, supProximity: 2.5, minRR: 1.5, volRatioMin: 1.2,  maxRiskPct: 0.05 },
-  'ETH/USDT':  { atrMin: 0.8, emaDistMin: 1.0, rsiMin: 50, rsiMax: 73, supportLookback: 100, supProximity: 2.8, minRR: 1.5, volRatioMin: 1.15, maxRiskPct: 0.06 },
-  'BNB/USDT':  { atrMin: 0.9, emaDistMin: 1.0, rsiMin: 50, rsiMax: 73, supportLookback: 100, supProximity: 3.0, minRR: 1.4, volRatioMin: 1.1,  maxRiskPct: 0.06 },
-  'XRP/USDT':  { atrMin: 1.0, emaDistMin: 0.8, rsiMin: 48, rsiMax: 74, supportLookback: 100, supProximity: 3.0, minRR: 1.5, volRatioMin: 1.15, maxRiskPct: 0.07 },
-  'DOGE/USDT': { atrMin: 1.5, emaDistMin: 0.7, rsiMin: 46, rsiMax: 74, supportLookback: 80,  supProximity: 4.0, minRR: 1.6, volRatioMin: 1.2,  maxRiskPct: 0.09 },
-  'ADA/USDT':  { atrMin: 1.0, emaDistMin: 0.8, rsiMin: 48, rsiMax: 73, supportLookback: 100, supProximity: 3.0, minRR: 1.5, volRatioMin: 1.1,  maxRiskPct: 0.07 },
-  'AVAX/USDT': { atrMin: 1.5, emaDistMin: 0.8, rsiMin: 48, rsiMax: 74, supportLookback: 80,  supProximity: 3.5, minRR: 1.5, volRatioMin: 1.1,  maxRiskPct: 0.08 },
-  'GRAM/USDT': { atrMin: 1.5, emaDistMin: 0.6, rsiMin: 46, rsiMax: 75, supportLookback: 70,  supProximity: 4.0, minRR: 1.6, volRatioMin: 1.1,  maxRiskPct: 0.09 },
-  'NEAR/USDT': { atrMin: 2.0, emaDistMin: 0.6, rsiMin: 45, rsiMax: 75, supportLookback: 70,  supProximity: 4.0, minRR: 1.6, volRatioMin: 1.1,  maxRiskPct: 0.10 },
-};
-
-const DEFAULT_CONFIG: SymbolConfig = {
-  atrMin: 1.0, emaDistMin: 1.0, rsiMin: 50, rsiMax: 73,
-  supportLookback: 80, supProximity: 3.0, minRR: 1.5, volRatioMin: 1.15, maxRiskPct: 0.08,
-};
-
-function cfg(symbol: string): SymbolConfig {
-  return SYMBOL_CONFIG[symbol] ?? DEFAULT_CONFIG;
-}
+// NOTE: this module (the pre-Phase-11 BUY/SELL/HOLD pipeline) is no longer
+// called from runner.ts, which now runs decideEntry/decideExit from
+// trade-state.ts instead. Kept for reference/tests until it's removed.
 
 function signalId(symbol: string, now: Date): string {
   const clean = symbol.replace('/', '');
