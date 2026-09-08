@@ -108,3 +108,60 @@ export interface EvaluateInput {
   position: Position;
   openPositionCount: number;
 }
+
+export type SwingType = 'HH' | 'HL' | 'LH' | 'LL';
+
+export interface SwingPoint {
+  index: number;
+  timestamp: number;
+  price: number;
+  kind: 'high' | 'low';
+  label: SwingType;
+}
+
+export type StructureBias = 'BULLISH' | 'BEARISH' | 'UNDEFINED';
+export type StructureEvent = 'BULLISH_BOS' | 'BEARISH_BOS' | 'BULLISH_CHOCH' | 'BEARISH_CHOCH' | 'NONE';
+
+export interface StructureAnalysis {
+  swings: SwingPoint[];
+  bias: StructureBias;
+  lastEvent: StructureEvent;
+  lastEventIndex: number | null;
+  structureAge: number;
+  invalidationLevel: number | null;
+  swingStrength: number;
+  qualityScore: number;
+}
+
+export type SetupKind = 'PULLBACK' | 'BREAKOUT_RETEST' | 'LIQUIDITY_SWEEP' | 'COMPRESSION_BREAKOUT';
+
+export interface SetupResult {
+  kind: SetupKind;
+  detected: boolean;
+  quality: number; // 0-100, only meaningful when detected=true
+  reason: string;
+}
+
+export type EntryZoneName = 'AGGRESSIVE' | 'BALANCED' | 'CONSERVATIVE';
+
+export interface EntryZone {
+  name: EntryZoneName;
+  price: number;
+  distanceFromPricePct: number;
+}
+
+export interface EntryLocationResult {
+  score: number; // 0-100
+  components: {
+    supportProximity: number;
+    resistanceProximity: number;
+    ema20Proximity: number;
+    ema50Proximity: number;
+    fibProximity: number;
+    valueAreaContext: number;
+    distFromRecentHighPct: number;
+    distFromRecentLowPct: number;
+    riskRewardScore: number;
+  };
+  zones: EntryZone[];
+}
