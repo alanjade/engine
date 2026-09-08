@@ -10,7 +10,9 @@
     "dev": "tsx watch index.ts",
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "backtest": "tsx scripts/backtest.ts",
+    "paper-report": "tsx scripts/paper-report.ts"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.43.0",

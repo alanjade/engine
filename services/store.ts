@@ -38,6 +38,9 @@ export async function saveSignal(sig: SignalResult): Promise<void> {
 // HoldSignal union — reusing it here would mean lying to the type checker
 // about what a TradeState decision is. Same `signals` table/columns; the
 // `signal` column just holds ENTER/WAIT/AVOID/EXIT instead of BUY/SELL/HOLD.
+//
+// Called for all four states (Phase 20 paper trading needs WAIT/AVOID logged
+// too, not just ENTER/EXIT, to reconstruct what the engine would have done).
 export async function saveDecision(input: {
   symbol: string;
   state: 'ENTER' | 'WAIT' | 'AVOID' | 'EXIT';
@@ -45,6 +48,9 @@ export async function saveDecision(input: {
   stopLoss: number | null;
   takeProfit: number | null;
   confidence: number | null;
+  reason?: string | null;
+  /** Actual fill price for EXIT rows — distinct from takeProfit, which is the target, not what it closed at. */
+  exitPrice?: number | null;
 }): Promise<void> {
   await query(() => db.from('signals').insert({
     signal_id: null,
@@ -56,6 +62,8 @@ export async function saveDecision(input: {
     take_profit: input.takeProfit,
     support: input.entry, // reused as the dedup band anchor for isDuplicate()
     confidence: input.confidence,
+    reason: input.reason ?? null,
+    exit_price: input.exitPrice ?? null,
   }), 'saveDecision');
 }
 
@@ -70,6 +78,15 @@ export async function getRecentSignals(symbol: string, hours = 24): Promise<any[
       .limit(50),
     'getRecentSignals',
   );
+  return data ?? [];
+}
+
+/** Every signal-log row across all symbols since N hours ago, oldest first — for paper-trading reports (getRecentSignals is single-symbol and newest-first, built for the dedup check, not reporting). */
+export async function getSignalsSince(hours: number, symbol?: string): Promise<any[]> {
+  const since = new Date(Date.now() - hours * 3600 * 1000).toISOString();
+  let builder = db.from('signals').select('*').gte('timestamp', since).order('timestamp', { ascending: true });
+  if (symbol) builder = builder.eq('symbol', symbol);
+  const data = await query<any[]>(() => builder, 'getSignalsSince');
   return data ?? [];
 }
 

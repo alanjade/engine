@@ -93,13 +93,24 @@ async function runSymbol(symbol: string, openPositionCount: number): Promise<voi
 
   if (decision.state === 'AVOID') {
     // Not alerted to Telegram every cycle — AVOID is the common case and
-    // would drown ENTER/EXIT alerts in noise. Logged above for visibility;
-    // formatAvoidAlert exists (Phase 15) for callers that want it surfaced
-    // (e.g. an on-demand "why isn't X triggering" command).
+    // would drown ENTER/EXIT alerts in noise. Still persisted (Phase 20
+    // paper trading needs every decision logged, not just the alerted
+    // ones) so a report can reconstruct what the engine would have done
+    // even for symbols that never triggered a Telegram message.
+    await saveDecision({
+      symbol, state: 'AVOID', entry: decision.entry, stopLoss: decision.stopLoss,
+      takeProfit: decision.takeProfit, confidence: decision.score?.total ?? null,
+      reason: decision.reasons.join(' '),
+    });
     return;
   }
 
   if (decision.state === 'WAIT') {
+    await saveDecision({
+      symbol, state: 'WAIT', entry: decision.entry, stopLoss: decision.stopLoss,
+      takeProfit: decision.takeProfit, confidence: decision.score?.total ?? null,
+      reason: decision.reasons.join(' '),
+    });
     await sendAlert(formatWaitAlert(symbol, decision));
     return;
   }
@@ -132,6 +143,7 @@ async function runSymbol(symbol: string, openPositionCount: number): Promise<voi
   await saveDecision({
     symbol, state: 'ENTER', entry: managed.entry, stopLoss: managed.stopLoss,
     takeProfit: managed.tp3, confidence: decision.score?.total ?? null,
+    reason: decision.reasons.join(' '),
   });
   await sendAlert(formatEnterAlert(symbol, decision));
 }
@@ -160,7 +172,7 @@ async function manageOpenPosition(symbol: string, storedPosition: StoredPosition
     });
     await saveDecision({
       symbol, state: 'EXIT', entry: managed.entry, stopLoss: result.position.stopLoss,
-      takeProfit: managed.tp3, confidence: null,
+      takeProfit: managed.tp3, confidence: null, reason: reasons.join(' '), exitPrice,
     });
     await sendAlert(formatExitAlert({
       symbol, entry: managed.entry, exitPrice, stopLoss: result.position.stopLoss,
