@@ -1,6 +1,6 @@
 import { calcEMA, calcATR, calcVolumeSMA } from './indicators.js';
 import { findSupports, findResistances, analyzeStructure } from './structure.js';
-import { isBullishRejection, hasConfirmationPattern } from './candles.js';
+import { isBullishRejection, hasConfirmationPattern, isDisplacementCandle } from './candles.js';
 import type { Candle, SetupResult } from '../types/index.js';
 
 function notDetected(kind: SetupResult['kind'], reason: string): SetupResult {
@@ -84,8 +84,7 @@ export function detectBreakoutRetest(candles: Candle[]): SetupResult {
 
   const body = Math.abs(breakoutCandle.close - breakoutCandle.open);
   const range = breakoutCandle.high - breakoutCandle.low;
-  const isDisplacement = range > 0 && body / range >= 0.6;
-  if (!isDisplacement) return notDetected(kind, 'Breakout candle lacks displacement (body too small vs range).');
+  if (!isDisplacementCandle(breakoutCandle, 0.6)) return notDetected(kind, 'Breakout candle lacks displacement (body too small vs range).');
 
   const volSMA = calcVolumeSMA(candles.slice(0, candles.length - (10 - breakoutIdx)), 20);
   const volumeExpanded = !!volSMA && breakoutCandle.volume / volSMA >= 1.3;
