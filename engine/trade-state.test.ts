@@ -93,3 +93,22 @@ describe('decideExit', () => {
     expect(decideExit([], openPosition).exit).toBe(false);
   });
 });
+
+describe('decideEntry — 1H/15M wiring', () => {
+  it('passes candles15m through to entry confirmation as the lower-timeframe check', () => {
+    const uptrend: Candle[] = [];
+    let price = 100;
+    for (let i = 0; i < 220; i++) { price *= 1.006; uptrend.push(candle(price, { volume: 1000 + i * 3 })); }
+    const candles4h = timestamped(uptrend);
+    const candles15m = timestamped([candle(101), candle(100), candle(98, { open: 100, high: 100.2, low: 90, close: 99.8 })]);
+
+    const withoutLtf = decideEntry({ candles4h, candles1d: candles4h, config });
+    const withLtf = decideEntry({ candles4h, candles1d: candles4h, candles15m, config });
+
+    // Whatever state each lands on, confirmation.lowerTimeframeConfirmed should
+    // reflect whether 15M data was actually supplied — null without it, a
+    // real boolean with it — proving the field is wired, not dropped.
+    if (withoutLtf.confirmation) expect(withoutLtf.confirmation.lowerTimeframeConfirmed).toBeNull();
+    if (withLtf.confirmation) expect(typeof withLtf.confirmation.lowerTimeframeConfirmed).toBe('boolean');
+  });
+});

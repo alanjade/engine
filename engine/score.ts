@@ -24,6 +24,8 @@ const WEIGHTS = {
 export interface ScoreInput {
   candles4h: Candle[];
   candles1d: Candle[];
+  /** Optional 1H candles — used for setup detection per the "1H → Setup detection" timeframe responsibility. Falls back to 4H when not supplied. */
+  candles1h?: Candle[];
   stopLoss?: number;
   takeProfit?: number;
   now?: Date; // for session scoring — defaults to current time, overridable for tests/backtests
@@ -60,8 +62,12 @@ function scoreMarketStructure(candles4h: Candle[]): number {
   return (structure.qualityScore / 100) * WEIGHTS.marketStructure;
 }
 
-function scoreSetupQuality(candles4h: Candle[]): { score: number; bestSetup: SetupKind | null } {
-  const setups = detectAllSetups(candles4h);
+function scoreSetupQuality(candles4h: Candle[], candles1h?: Candle[]): { score: number; bestSetup: SetupKind | null } {
+  // 1H → Setup detection: setups form and confirm faster on 1H than 4H, so
+  // prefer it when available; 4H remains the fallback so this degrades
+  // gracefully if 1H is unavailable for a given cycle (Phase 2's cache
+  // already tolerates that).
+  const setups = detectAllSetups(candles1h && candles1h.length >= 60 ? candles1h : candles4h);
   if (!setups.length) return { score: 0, bestSetup: null };
   const best = setups.reduce((max, s) => (s.quality > max.quality ? s : max));
   return { score: (best.quality / 100) * WEIGHTS.setupQuality, bestSetup: best.kind };
@@ -74,8 +80,8 @@ function scoreEntryLocationComponent(candles4h: Candle[], stopLoss?: number, tak
 }
 
 /** Liquidity: rewards a clean, well-touched support/resistance structure near price — proxy via structure's swing data plus setup detection's liquidity-sweep quality when present. */
-function scoreLiquidity(candles4h: Candle[]): number {
-  const setups = detectAllSetups(candles4h);
+function scoreLiquidity(candles4h: Candle[], candles1h?: Candle[]): number {
+  const setups = detectAllSetups(candles1h && candles1h.length >= 60 ? candles1h : candles4h);
   const sweep = setups.find(s => s.kind === 'LIQUIDITY_SWEEP');
   if (sweep) return (sweep.quality / 100) * WEIGHTS.liquidity;
   // No active sweep — fall back to a smaller baseline from structure quality, since liquidity context still matters even without an active sweep event.
@@ -140,17 +146,17 @@ function gradeFor(total: number): ScoreGrade {
 }
 
 export function calcEntryScore(input: ScoreInput): ScoreResult {
-  const { candles4h, candles1d, stopLoss, takeProfit } = input;
+  const { candles4h, candles1d, candles1h, stopLoss, takeProfit } = input;
   const now = input.now ?? new Date();
 
-  const { score: setupQuality, bestSetup } = scoreSetupQuality(candles4h);
+  const { score: setupQuality, bestSetup } = scoreSetupQuality(candles4h, candles1h);
 
   const breakdown: ScoreBreakdown = {
     htfTrend: round2(scoreHtfTrend(candles4h, candles1d)),
     marketStructure: round2(scoreMarketStructure(candles4h)),
     setupQuality: round2(setupQuality),
     entryLocation: round2(scoreEntryLocationComponent(candles4h, stopLoss, takeProfit)),
-    liquidity: round2(scoreLiquidity(candles4h)),
+    liquidity: round2(scoreLiquidity(candles4h, candles1h)),
     volume: round2(scoreVolume(candles4h)),
     momentum: round2(scoreMomentum(candles4h)),
     cvd: round2(scoreCvd(candles4h)),

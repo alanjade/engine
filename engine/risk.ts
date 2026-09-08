@@ -64,3 +64,43 @@ export function calcPositionSize(accountEquity: number, entry: number, stopLoss:
   }
   return Math.round(((accountEquity * riskPct) / risk) * 100) / 100;
 }
+
+export interface TakeProfitLevels {
+  tp1: number; // 1R — first partial, de-risks the trade
+  tp2: number; // anchored to the nearest resistance when it clears 1R, otherwise 2R
+  tp3: number; // extension beyond tp2 for the runner portion
+  rr1: number;
+  rr2: number;
+  rr3: number;
+}
+
+/**
+ * Three take-profit tiers. TP2 anchors to actual resistance when it's a
+ * viable target (beyond 1R) rather than a flat RR multiple, since a fixed
+ * "2R" target can sit either well short of or well past a real resistance
+ * level — using the level itself when available is more realistic than a
+ * round-number RR target invented independent of market structure.
+ */
+export function calcTakeProfitLevels(entry: number, stopLoss: number, resistance?: number): TakeProfitLevels {
+  const risk = entry - stopLoss;
+  const tp1 = entry + risk * 1;
+  const tp2 = resistance !== undefined && resistance > tp1 ? resistance : entry + risk * 2;
+  const tp3 = Math.max(entry + risk * 3, entry + (tp2 - entry) * 1.5);
+
+  return {
+    tp1, tp2, tp3,
+    rr1: (tp1 - entry) / risk,
+    rr2: (tp2 - entry) / risk,
+    rr3: (tp3 - entry) / risk,
+  };
+}
+
+/** Portfolio-level exposure cap — independent of any single trade's own risk math. */
+export function validateMaxExposure(openPositionCount: number, maxOpenPositions: number): boolean {
+  return openPositionCount < maxOpenPositions;
+}
+
+/** Explicit RR gate, split out from calcStopLoss so callers can check it against a resistance-anchored TP without recomputing the stop. */
+export function rejectInsufficientRR(riskReward: number, minRR: number): boolean {
+  return riskReward < minRR;
+}

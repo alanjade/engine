@@ -69,4 +69,25 @@ describe('calcEntryScore', () => {
     const flatResult = calcEntryScore({ candles4h: flat, candles1d: flat });
     expect(flatResult.bestSetup === null || typeof flatResult.bestSetup === 'string').toBe(true);
   });
+
+  it('uses 1H candles for setup detection when supplied, instead of silently ignoring them', () => {
+    // 4H candles are flat (no setup possible there); 1H candles carry a
+    // genuine pullback-in-uptrend shape. If candles1h is actually wired in,
+    // setupQuality should be nonzero; if it's ignored, it'd fall back to
+    // the flat 4H series and score zero.
+    const flat4h = timestamped(Array.from({ length: 220 }, (_, i) => candle(100 + (i % 2 === 0 ? 0.05 : -0.05))));
+
+    const uptrend1h: Candle[] = [];
+    let price = 100;
+    for (let i = 0; i < 200; i++) { price *= 1.006; uptrend1h.push(candle(price)); }
+    for (let i = 0; i < 15; i++) uptrend1h.push(candle(price)); // flatten at the peak
+    for (let i = 0; i < 6; i++) price *= 0.995;
+    uptrend1h.push(candle(price * 1.002, { open: price, high: price * 1.005, low: price * 0.97 })); // rejection candle
+    const candles1h = timestamped(uptrend1h);
+
+    const withoutH1 = calcEntryScore({ candles4h: flat4h, candles1d: flat4h });
+    const with1h = calcEntryScore({ candles4h: flat4h, candles1d: flat4h, candles1h });
+
+    expect(with1h.breakdown.setupQuality).toBeGreaterThan(withoutH1.breakdown.setupQuality);
+  });
 });

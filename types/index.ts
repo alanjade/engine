@@ -260,9 +260,60 @@ export interface EntryDecision {
   stopLoss: number | null;
   takeProfit: number | null;
   riskReward: number | null;
+  regime: MarketRegime | null;
+  takeProfitLevels: TakeProfitLevels | null;
+  entryZones: EntryZone[] | null;
 }
 
 export interface ExitDecision {
   exit: boolean;
   reasons: string[];
+}
+
+export interface ManagedPosition {
+  entry: number;
+  stopLoss: number;
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  remainingPct: number; // 0-100
+  highestPrice: number; // highest close seen since entry — drives trailing stop
+  tp1Hit: boolean;
+  tp2Hit: boolean;
+  breakEvenActivated: boolean;
+}
+
+export interface PositionUpdateResult {
+  position: ManagedPosition;
+  actions: string[];
+  closed: boolean; // true once remainingPct reaches 0
+}
+
+export interface Opportunity {
+  symbol: string;
+  rank: number;
+  state: TradeState;
+  score: number;
+  grade: ScoreGrade;
+  bestSetup: SetupKind | null;
+  riskReward: number | null;
+}
+
+export interface CandidateState {
+  symbol: string;
+  regime: MarketRegime;
+  htfBullish: boolean;
+  structureQuality: number;
+  majorSupport: number | null;
+  majorResistance: number | null;
+  scannedAt: number; // epoch ms
+}
+
+export interface TakeProfitLevels {
+  tp1: number;
+  tp2: number;
+  tp3: number;
+  rr1: number;
+  rr2: number;
+  rr3: number;
 }

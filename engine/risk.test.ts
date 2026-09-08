@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calcStopLoss, calcPositionSize } from './risk.js';
+import { calcStopLoss, calcPositionSize, calcTakeProfitLevels, validateMaxExposure, rejectInsufficientRR } from './risk.js';
 import type { SymbolConfig } from '../types/index.js';
 
 const cfg: SymbolConfig = {
@@ -46,5 +46,48 @@ describe('calcPositionSize', () => {
   it('throws instead of silently returning Infinity/NaN when risk <= 0', () => {
     expect(() => calcPositionSize(10000, 100, 100)).toThrow();
     expect(() => calcPositionSize(10000, 100, 101)).toThrow();
+  });
+});
+
+describe('calcTakeProfitLevels', () => {
+  it('uses flat RR multiples when no resistance is supplied', () => {
+    const levels = calcTakeProfitLevels(110, 100); // risk=10
+    expect(levels.tp1).toBeCloseTo(120, 5); // 1R
+    expect(levels.tp2).toBeCloseTo(130, 5); // 2R (no resistance to anchor to)
+    expect(levels.rr1).toBeCloseTo(1, 5);
+    expect(levels.rr2).toBeCloseTo(2, 5);
+  });
+
+  it('anchors TP2 to resistance when it clears 1R', () => {
+    const levels = calcTakeProfitLevels(110, 100, 125); // risk=10, resistance=125 > tp1(120)
+    expect(levels.tp2).toBe(125);
+    expect(levels.tp3).toBeGreaterThan(levels.tp2);
+  });
+
+  it('falls back to the 2R target when resistance does not clear 1R', () => {
+    const levels = calcTakeProfitLevels(110, 100, 115); // resistance below tp1(120)
+    expect(levels.tp2).toBeCloseTo(130, 5); // ignores the too-close resistance
+  });
+
+  it('always orders tp1 < tp2 < tp3', () => {
+    const levels = calcTakeProfitLevels(110, 100, 125);
+    expect(levels.tp1).toBeLessThan(levels.tp2);
+    expect(levels.tp2).toBeLessThan(levels.tp3);
+  });
+});
+
+describe('validateMaxExposure', () => {
+  it('allows new positions under the cap and blocks at/over it', () => {
+    expect(validateMaxExposure(1, 3)).toBe(true);
+    expect(validateMaxExposure(3, 3)).toBe(false);
+    expect(validateMaxExposure(4, 3)).toBe(false);
+  });
+});
+
+describe('rejectInsufficientRR', () => {
+  it('rejects RR below the minimum and accepts RR at or above it', () => {
+    expect(rejectInsufficientRR(1.2, 1.5)).toBe(true);
+    expect(rejectInsufficientRR(1.5, 1.5)).toBe(false);
+    expect(rejectInsufficientRR(2.0, 1.5)).toBe(false);
   });
 });

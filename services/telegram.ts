@@ -1,6 +1,6 @@
 import { ENV } from '../utils/env.js';
 import { log, err } from '../utils/logger.js';
-import type { BuySignal, SellSignal, HoldSignal } from '../types/index.js';
+import type { BuySignal, SellSignal, HoldSignal, EntryDecision, ExitDecision } from '../types/index.js';
 
 const API = `https://api.telegram.org/bot${ENV.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
@@ -61,5 +61,115 @@ export function formatHoldAlert(sig: HoldSignal): string {
     `Stop Loss: $${sig.stop_loss}\n` +
     `Take Profit: $${sig.take_profit}\n` +
     `Remaining Position: ${sig.remaining_percent}%`
+  );
+}
+// ── Phase 15: ENTER/WAIT/AVOID/EXIT alerts, backed by the trade-state model ────
+//
+// These are the current alert formats; formatBuyAlert/formatSellAlert/
+// formatHoldAlert above are the pre-Phase-11 formats and are kept only
+// because runner.ts/signal.ts haven't been rewired to decideEntry/decideExit
+// yet (that rewiring is a separate integration task, not part of Phase 15).
+
+function checklistLine(label: string, passed: boolean): string {
+  return `${passed ? '✓' : '✗'} ${label}`;
+}
+
+export function formatEnterAlert(symbol: string, decision: EntryDecision): string {
+  const { score, confirmation, entry, stopLoss, takeProfitLevels, riskReward, regime } = decision;
+  if (!score || !confirmation || entry === null || stopLoss === null || !takeProfitLevels) {
+    return `🟢 *ENTER* — ${symbol}\n(Incomplete decision data — this shouldn't happen for a real ENTER state.)`;
+  }
+
+  const checklist = [
+    checklistLine('Rejection/hammer/engulfing', confirmation.rejectionCandle || confirmation.hammer || confirmation.engulfing),
+    checklistLine('Displacement', confirmation.displacementCandle),
+    checklistLine('Breakout/retest', confirmation.breakoutConfirmed || confirmation.breakoutRetestConfirmed),
+    checklistLine('Volume', confirmation.volumeConfirmed),
+    checklistLine('Structure', confirmation.structureConfirmed),
+    checklistLine('Liquidity', confirmation.liquidityConfirmed),
+    confirmation.lowerTimeframeConfirmed !== null ? checklistLine('15M confirmation', confirmation.lowerTimeframeConfirmed) : null,
+  ].filter((l): l is string => l !== null).join('\n');
+
+  return (
+    `🟢 *ENTER* — ${symbol}\n\n` +
+    `Direction: LONG\n` +
+    `Score: ${score.total} (${score.grade})\n` +
+    `Setup: ${score.bestSetup ?? 'n/a'}\n` +
+    `Regime: ${regime ?? 'n/a'}\n\n` +
+    `Entry: $${entry.toFixed(4)}\n` +
+    `Stop: $${stopLoss.toFixed(4)}\n` +
+    `TP1: $${takeProfitLevels.tp1.toFixed(4)} (${takeProfitLevels.rr1.toFixed(2)}R)\n` +
+    `TP2: $${takeProfitLevels.tp2.toFixed(4)} (${takeProfitLevels.rr2.toFixed(2)}R)\n` +
+    `TP3: $${takeProfitLevels.tp3.toFixed(4)} (${takeProfitLevels.rr3.toFixed(2)}R)\n` +
+    `RR: ${riskReward?.toFixed(2) ?? 'n/a'}\n` +
+    `Risk: ${((entry - stopLoss) / entry * 100).toFixed(2)}%\n\n` +
+    `Confirmation checklist:\n${checklist}\n\n` +
+    `Status: NEW\n\n` +
+    `⚠️ Not financial advice.`
+  );
+}
+
+export function formatWaitAlert(symbol: string, decision: EntryDecision): string {
+  const { score, confirmation } = decision;
+  if (!score) return `🟡 *WAIT* — ${symbol}\n(No score available.)`;
+
+  const checks: [string, boolean][] = confirmation ? [
+    ['Rejection/hammer/engulfing', confirmation.rejectionCandle || confirmation.hammer || confirmation.engulfing],
+    ['Displacement', confirmation.displacementCandle],
+    ['Breakout/retest', confirmation.breakoutConfirmed || confirmation.breakoutRetestConfirmed],
+    ['Volume', confirmation.volumeConfirmed],
+    ['Structure', confirmation.structureConfirmed],
+    ['Liquidity', confirmation.liquidityConfirmed],
+  ] : [];
+  const confirmed = checks.filter(([, ok]) => ok).map(([label]) => label);
+  const missing = checks.filter(([, ok]) => !ok).map(([label]) => label);
+
+  return (
+    `🟡 *WAIT* — ${symbol}\n\n` +
+    `Score: ${score.total} (${score.grade})\n` +
+    `Setup: ${score.bestSetup ?? 'n/a'}\n\n` +
+    `Confirmed:\n${confirmed.length ? confirmed.map(c => `✓ ${c}`).join('\n') : '(none yet)'}\n\n` +
+    `Missing:\n${missing.length ? missing.map(m => `✗ ${m}`).join('\n') : '(none — awaiting score threshold)'}\n\n` +
+    `Status: WAIT`
+  );
+}
+
+export function formatAvoidAlert(symbol: string, decision: EntryDecision): string {
+  const scoreLine = decision.score ? `Score: ${decision.score.total} (${decision.score.grade})\n` : '';
+  const chaseWarning = decision.chase?.blocked ? `\n⚠️ DO NOT CHASE: ${decision.chase.reasons.join(', ')}\n` : '';
+  const rrWarning = decision.riskReward !== null && decision.riskReward < 1
+    ? `\n⚠️ Poor risk/reward (${decision.riskReward.toFixed(2)}).\n`
+    : '';
+
+  return (
+    `🔴 *AVOID* — ${symbol}\n\n` +
+    scoreLine +
+    `Reason: ${decision.reasons.join(' ')}` +
+    chaseWarning +
+    rrWarning
+  );
+}
+
+export interface ExitAlertInput {
+  symbol: string;
+  entry: number;
+  exitPrice: number;
+  stopLoss: number;
+  decision: ExitDecision;
+}
+
+export function formatExitAlert(input: ExitAlertInput): string {
+  const { symbol, entry, exitPrice, stopLoss, decision } = input;
+  const pnlPct = ((exitPrice - entry) / entry) * 100;
+  const risk = entry - stopLoss;
+  const rMultiple = risk > 0 ? (exitPrice - entry) / risk : null;
+
+  return (
+    `⚪ *EXIT* — ${symbol}\n\n` +
+    `Entry: $${entry.toFixed(4)}\n` +
+    `Exit: $${exitPrice.toFixed(4)}\n` +
+    `P&L: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%\n` +
+    `R multiple: ${rMultiple !== null ? rMultiple.toFixed(2) + 'R' : 'n/a'}\n\n` +
+    `Reason: ${decision.reasons.join(' ')}`
   );
 }

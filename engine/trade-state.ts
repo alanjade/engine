@@ -1,8 +1,9 @@
 import { calcATR } from './indicators.js';
 import { nearestSupport, nearestResistance, analyzeStructure } from './structure.js';
 import { detectRegime, isTradableForLong } from './regime.js';
-import { calcStopLoss } from './risk.js';
+import { calcStopLoss, calcTakeProfitLevels } from './risk.js';
 import { calcEntryScore } from './score.js';
+import { scoreEntryLocation } from './entry-location.js';
 import { analyzeEntryConfirmation } from './confirmation.js';
 import { analyzeChase } from './chase.js';
 import type { Candle, EntryDecision, ExitDecision, Position, SymbolConfig } from '../types/index.js';
@@ -15,6 +16,9 @@ const MIN_SCORE_TO_ENTER = 70;
 export interface EntryDecisionInput {
   candles4h: Candle[];
   candles1d: Candle[];
+  /** 1H → Setup detection, 15M → Entry confirmation (see TODO's Timeframe Responsibilities). Both optional; each falls back gracefully to 4H-only when unavailable for a given cycle. */
+  candles1h?: Candle[];
+  candles15m?: Candle[];
   config: SymbolConfig;
   candlesPerDay?: number; // for chase's 24h-move check — defaults to 6 (4H candles)
 }
@@ -32,7 +36,7 @@ export interface EntryDecisionInput {
  * that hasn't fully confirmed yet, worth watching rather than acting on.
  */
 export function decideEntry(input: EntryDecisionInput): EntryDecision {
-  const { candles4h, candles1d, config } = input;
+  const { candles4h, candles1d, candles1h, candles15m, config } = input;
   const candlesPerDay = input.candlesPerDay ?? 6;
   const reasons: string[] = [];
 
@@ -58,19 +62,19 @@ export function decideEntry(input: EntryDecisionInput): EntryDecision {
 
   const structure = analyzeStructure(candles4h, 2);
   if (structure.qualityScore < MIN_STRUCTURE_QUALITY) {
-    return avoidResult([`Poor structure quality (${structure.qualityScore}/100).`]);
+    return avoidResult([`Poor structure quality (${structure.qualityScore}/100).`], { regime: regime.regime });
   }
 
   const slResult = calcStopLoss(price, support, atr, config);
   if (!slResult.ok || slResult.stopLoss === null) {
-    return avoidResult([slResult.reason ?? 'Stop-loss calculation failed.']);
+    return avoidResult([slResult.reason ?? 'Stop-loss calculation failed.'], { regime: regime.regime });
   }
   const stopLoss = slResult.stopLoss;
   const takeProfit = resistance.price;
   const riskReward = (takeProfit - price) / (price - stopLoss);
 
   if (riskReward < config.minRR) {
-    return avoidResult([`RR ${riskReward.toFixed(2)} below minimum ${config.minRR}.`], { entry: price, stopLoss, takeProfit, riskReward });
+    return avoidResult([`RR ${riskReward.toFixed(2)} below minimum ${config.minRR}.`], { entry: price, stopLoss, takeProfit, riskReward, regime: regime.regime });
   }
 
   const chase = analyzeChase({
@@ -78,34 +82,40 @@ export function decideEntry(input: EntryDecisionInput): EntryDecision {
     breakoutLevel: resistance.price, currentRR: riskReward, originalRR: riskReward,
   });
   if (chase?.blocked) {
-    return avoidResult(['DO NOT CHASE: ' + chase.reasons.join(', ')], { entry: price, stopLoss, takeProfit, riskReward, chase });
+    return avoidResult(['DO NOT CHASE: ' + chase.reasons.join(', ')], { entry: price, stopLoss, takeProfit, riskReward, chase, regime: regime.regime });
   }
 
-  const score = calcEntryScore({ candles4h, candles1d, stopLoss, takeProfit });
+  const score = calcEntryScore({ candles4h, candles1d, candles1h, stopLoss, takeProfit });
   const entryLocationScore = (score.breakdown.entryLocation / 15) * 100;
   if (entryLocationScore < MIN_ENTRY_LOCATION_SCORE) {
-    return avoidResult([`Poor entry location (${entryLocationScore.toFixed(0)}/100).`], { entry: price, stopLoss, takeProfit, riskReward, score, chase });
+    return avoidResult([`Poor entry location (${entryLocationScore.toFixed(0)}/100).`], { entry: price, stopLoss, takeProfit, riskReward, score, chase, regime: regime.regime });
   }
 
   if (score.total < MIN_SCORE_TO_WAIT) {
-    return avoidResult([`Composite score ${score.total} below WATCH threshold.`], { entry: price, stopLoss, takeProfit, riskReward, score, chase });
+    return avoidResult([`Composite score ${score.total} below WATCH threshold.`], { entry: price, stopLoss, takeProfit, riskReward, score, chase, regime: regime.regime });
   }
 
-  const confirmation = analyzeEntryConfirmation({ candles: candles4h, breakoutLevel: resistance.price });
+  const confirmation = analyzeEntryConfirmation({
+    candles: candles4h, breakoutLevel: resistance.price,
+    lowerTimeframeCandles: candles15m, // 15M → Entry confirmation
+  });
+
+  const takeProfitLevels = calcTakeProfitLevels(price, stopLoss, resistance.price);
+  const entryZones = scoreEntryLocation(candles4h, { stopLoss, takeProfit })?.zones ?? null;
 
   if (confirmation?.confirmed && score.total >= MIN_SCORE_TO_ENTER) {
     reasons.push(`Setup confirmed (${confirmation.confirmedCount} confirmations), score ${score.total} (${score.grade}), RR ${riskReward.toFixed(2)}.`);
-    return { state: 'ENTER', reasons, score, chase, confirmation, entry: price, stopLoss, takeProfit, riskReward };
+    return { state: 'ENTER', reasons, score, chase, confirmation, entry: price, stopLoss, takeProfit, riskReward, regime: regime.regime, takeProfitLevels, entryZones };
   }
 
   const missing = confirmation ? MIN_SCORE_TO_ENTER > score.total ? 'score below ENTER threshold' : 'confirmation incomplete' : 'confirmation unavailable';
   reasons.push(`Setup present (score ${score.total}, ${score.grade}) but ${missing}.`);
-  return { state: 'WAIT', reasons, score, chase, confirmation, entry: price, stopLoss, takeProfit, riskReward };
+  return { state: 'WAIT', reasons, score, chase, confirmation, entry: price, stopLoss, takeProfit, riskReward, regime: regime.regime, takeProfitLevels, entryZones };
 }
 
 function avoidResult(
   reasons: string[],
-  partial: Partial<Pick<EntryDecision, 'entry' | 'stopLoss' | 'takeProfit' | 'riskReward' | 'score' | 'chase' | 'confirmation'>> = {},
+  partial: Partial<Pick<EntryDecision, 'entry' | 'stopLoss' | 'takeProfit' | 'riskReward' | 'score' | 'chase' | 'confirmation' | 'regime'>> = {},
 ): EntryDecision {
   return {
     state: 'AVOID', reasons,
@@ -116,6 +126,9 @@ function avoidResult(
     stopLoss: partial.stopLoss ?? null,
     takeProfit: partial.takeProfit ?? null,
     riskReward: partial.riskReward ?? null,
+    regime: partial.regime ?? null,
+    takeProfitLevels: null,
+    entryZones: null,
   };
 }
 
