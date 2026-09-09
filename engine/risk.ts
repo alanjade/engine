@@ -44,12 +44,12 @@ export function calcStopLoss(
     return { ok: false, stopLoss: null, reason: 'Stop-loss at or above entry — invalid setup.' };
   }
 
-  const riskPct = (entry - stopLoss) / entry;
+  const riskPct = ((entry - stopLoss) / entry) * 100; // percent-scale, matching config.maxRiskPct's unit (see SymbolConfig doc comment)
   if (riskPct > config.maxRiskPct) {
     return {
       ok: false,
       stopLoss: null,
-      reason: `Stop distance ${(riskPct * 100).toFixed(2)}% exceeds max acceptable risk ${(config.maxRiskPct * 100).toFixed(2)}%.`,
+      reason: `Stop distance ${riskPct.toFixed(2)}% exceeds max acceptable risk ${config.maxRiskPct.toFixed(2)}%.`,
     };
   }
 

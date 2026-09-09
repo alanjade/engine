@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { isValidCandle, normalizeOHLCV, fetchOHLCV, clearOHLCVCache } from './exchange.js';
+import { isValidCandle, normalizeOHLCV, fetchOHLCV, clearOHLCVCache, dropFormingCandle } from './exchange.js';
 import type { Candle } from '../types/index.js';
 
 function validCandle(overrides: Partial<Candle> = {}): Candle {
@@ -27,6 +27,32 @@ describe('isValidCandle', () => {
 
   it('rejects negative volume', () => {
     expect(isValidCandle(validCandle({ volume: -1 }))).toBe(false);
+  });
+});
+
+describe('dropFormingCandle', () => {
+  it('drops the last candle when its close time has not passed yet (still forming)', () => {
+    const now = Date.now();
+    const candles = [
+      { timestamp: now - 8 * 3_600_000, open: 100, high: 101, low: 99, close: 100.5, volume: 500 },
+      { timestamp: now - 30 * 60 * 1000, open: 100, high: 101, low: 99, close: 100.5, volume: 500 }, // opened 30min ago, 4H candle not closed yet
+    ];
+    const result = dropFormingCandle(candles, '4h');
+    expect(result).toHaveLength(1);
+  });
+
+  it('keeps the last candle when its close time has already passed', () => {
+    const now = Date.now();
+    const candles = [
+      { timestamp: now - 8 * 3_600_000, open: 100, high: 101, low: 99, close: 100.5, volume: 500 },
+      { timestamp: now - 5 * 3_600_000, open: 100, high: 101, low: 99, close: 100.5, volume: 500 }, // opened 5h ago, well past a 4H close
+    ];
+    const result = dropFormingCandle(candles, '4h');
+    expect(result).toHaveLength(2);
+  });
+
+  it('returns an empty array unchanged', () => {
+    expect(dropFormingCandle([], '4h')).toEqual([]);
   });
 });
 

@@ -4,6 +4,23 @@ import type { BuySignal, SellSignal, HoldSignal, EntryDecision, ExitDecision, Ma
 
 const API = `https://api.telegram.org/bot${ENV.TELEGRAM_BOT_TOKEN}/sendMessage`;
 
+/**
+ * Telegram's legacy 'Markdown' parse mode treats `_`, `*`, `` ` ``, and `[`
+ * as formatting control characters. Every alert below writes its own bold
+ * markers (`*ENTER*` etc.) literally in the template — those are meant to
+ * be interpreted. What ISN'T meant to be interpreted is free-text content
+ * generated elsewhere (decision reasons, chase warnings, error messages) —
+ * if any of that text ever contains one of these characters (an exchange
+ * error message, a setup name, anything not hand-written here), it can
+ * break the intended formatting or make Telegram reject the message
+ * outright (an unmatched `_`/`*` is a hard API error, not just a display
+ * glitch). Applied only at the point free-text is interpolated in, so the
+ * literal formatting markers in the templates stay intact.
+ */
+export function escapeMarkdown(text: string): string {
+  return text.replace(/([_*`[])/g, '\\$1');
+}
+
 export async function sendAlert(text: string): Promise<void> {
   if (!ENV.TELEGRAM_BOT_TOKEN || !ENV.TELEGRAM_CHAT_ID) {
     log('[TELEGRAM] Skipped — no credentials configured.');
@@ -35,7 +52,7 @@ export function formatBuyAlert(sig: BuySignal): string {
     `Risk/Reward: ${sig.risk_reward}\n` +
     `Confidence: ${sig.confidence}%\n` +
     `Volume Ratio: ${sig.volume_ratio}\n\n` +
-    `Reason:\n${sig.reason}\n\n` +
+    `Reason:\n${escapeMarkdown(sig.reason)}\n\n` +
     `⚠️ Not financial advice.`
   );
 }
@@ -47,7 +64,7 @@ export function formatSellAlert(sig: SellSignal): string {
     `Timeframe: 4H\n` +
     `Price: $${sig.price}\n` +
     `Exit: $${sig.price}\n\n` +
-    `Reason:\n${sig.reason}\n\n` +
+    `Reason:\n${escapeMarkdown(sig.reason)}\n\n` +
     `⚠️ Not financial advice.`
   );
 }
@@ -136,7 +153,7 @@ export function formatWaitAlert(symbol: string, decision: EntryDecision): string
 
 export function formatAvoidAlert(symbol: string, decision: EntryDecision): string {
   const scoreLine = decision.score ? `Score: ${decision.score.total} (${decision.score.grade})\n` : '';
-  const chaseWarning = decision.chase?.blocked ? `\n⚠️ DO NOT CHASE: ${decision.chase.reasons.join(', ')}\n` : '';
+  const chaseWarning = decision.chase?.blocked ? `\n⚠️ DO NOT CHASE: ${escapeMarkdown(decision.chase.reasons.join(', '))}\n` : '';
   const rrWarning = decision.riskReward !== null && decision.riskReward < 1
     ? `\n⚠️ Poor risk/reward (${decision.riskReward.toFixed(2)}).\n`
     : '';
@@ -144,7 +161,7 @@ export function formatAvoidAlert(symbol: string, decision: EntryDecision): strin
   return (
     `🔴 *AVOID* — ${symbol}\n\n` +
     scoreLine +
-    `Reason: ${decision.reasons.join(' ')}` +
+    `Reason: ${escapeMarkdown(decision.reasons.join(' '))}` +
     chaseWarning +
     rrWarning
   );
@@ -162,7 +179,7 @@ export function formatPositionUpdateAlert(symbol: string, position: ManagedPosit
     `TP1: $${position.tp1.toFixed(4)}${position.tp1Hit ? ' ✓' : ''}\n` +
     `TP2: $${position.tp2.toFixed(4)}${position.tp2Hit ? ' ✓' : ''}\n` +
     `TP3: $${position.tp3.toFixed(4)}\n\n` +
-    `${actions.join('\n')}`
+    `${escapeMarkdown(actions.join('\n'))}`
   );
 }
 
@@ -186,6 +203,6 @@ export function formatExitAlert(input: ExitAlertInput): string {
     `Exit: $${exitPrice.toFixed(4)}\n` +
     `P&L: ${pnlPct >= 0 ? '+' : ''}${pnlPct.toFixed(2)}%\n` +
     `R multiple: ${rMultiple !== null ? rMultiple.toFixed(2) + 'R' : 'n/a'}\n\n` +
-    `Reason: ${decision.reasons.join(' ')}`
+    `Reason: ${escapeMarkdown(decision.reasons.join(' '))}`
   );
 }

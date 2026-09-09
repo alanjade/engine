@@ -157,7 +157,34 @@ async function fetchOHLCVFromExchange(
     throw new Error(`Exchange error: ${errStr}`);
   }
 
-  return normalizeOHLCV(exchange, raw, limit);
+  return dropFormingCandle(normalizeOHLCV(exchange, raw, limit), timeframe);
+}
+
+const TIMEFRAME_MS: Record<Timeframe, number> = {
+  '15m': 15 * 60 * 1000,
+  '1h': 60 * 60 * 1000,
+  '4h': 4 * 60 * 60 * 1000,
+  '1d': 24 * 60 * 60 * 1000,
+};
+
+/**
+ * Exchanges commonly include the still-forming current candle as the last
+ * element of a klines response. Left in, it feeds regime/EMA/confirmation/
+ * stop-TP/trailing/backtest logic a candle whose high/low/close are still
+ * changing — every read of "the last candle" upstream implicitly assumes it
+ * represents a closed, final bar. Dropping it when its close time hasn't
+ * passed yet is a conservative, easy-to-verify check: candle.timestamp is
+ * assumed to be the OPEN time (true for all four exchanges wired here), so
+ * the candle is still forming iff timestamp + interval > now.
+ */
+export function dropFormingCandle(candles: Candle[], timeframe: Timeframe): Candle[] {
+  if (!candles.length) return candles;
+  const last = candles[candles.length - 1]!;
+  const intervalMs = TIMEFRAME_MS[timeframe];
+  if (last.timestamp + intervalMs > Date.now()) {
+    return candles.slice(0, -1);
+  }
+  return candles;
 }
 
 export function isValidCandle(c: Candle): boolean {
@@ -238,8 +265,8 @@ interface CacheEntry {
 
 const cache = new Map<string, CacheEntry>();
 
-function cacheKey(symbol: string, timeframe: Timeframe): string {
-  return `${symbol}:${timeframe}`;
+function cacheKey(symbol: string, timeframe: Timeframe, exchange: ExchangeName | null, limit: number): string {
+  return `${symbol}:${timeframe}:${exchange ?? 'auto'}:${limit}`;
 }
 
 /** Fetch OHLCV for one timeframe, reusing a cached result within its TTL. */
@@ -249,7 +276,7 @@ export async function fetchOHLCVCached(
   exchange: ExchangeName | null = null,
   limit = 250,
 ): Promise<Candle[]> {
-  const key = cacheKey(symbol, timeframe);
+  const key = cacheKey(symbol, timeframe, exchange, limit);
   const cached = cache.get(key);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS[timeframe]) {
     return cached.candles;

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatEnterAlert, formatWaitAlert, formatAvoidAlert, formatExitAlert } from './telegram.js';
+import { formatEnterAlert, formatWaitAlert, formatAvoidAlert, formatExitAlert, escapeMarkdown } from './telegram.js';
 import { decideEntry, decideExit } from '../engine/trade-state.js';
 import type { Candle, SymbolConfig } from '../types/index.js';
 
@@ -19,7 +19,7 @@ function timestamped(candles: Candle[]): Candle[] {
 
 const config: SymbolConfig = {
   atrMin: 0.5, emaDistMin: 0.5, rsiMin: 40, rsiMax: 80,
-  supportLookback: 100, supProximity: 5, minRR: 1.2, volRatioMin: 1.0, maxRiskPct: 0.15,
+  supportLookback: 100, supProximity: 5, minRR: 1.2, volRatioMin: 1.0, maxRiskPct: 15,
 };
 
 function zigzagUptrend(rate: number, n = 220): Candle[] {
@@ -35,6 +35,22 @@ function zigzagUptrend(rate: number, n = 220): Candle[] {
 function flatCandles(): Candle[] {
   return timestamped(Array.from({ length: 220 }, (_, i) => candle(100 + (i % 2 === 0 ? 0.05 : -0.05))));
 }
+
+describe('escapeMarkdown', () => {
+  it('backslash-escapes Telegram legacy Markdown control characters', () => {
+    expect(escapeMarkdown('EMA_20 * distance [test]')).toBe('EMA\\_20 \\* distance \\[test]');
+    expect(escapeMarkdown('normal text with no special chars')).toBe('normal text with no special chars');
+  });
+
+  it('AVOID alert escapes a reason string containing markdown control characters', () => {
+    const decision = decideEntry({ candles4h: flatCandles(), candles1d: flatCandles(), config });
+    const withRiskyReason = { ...decision, reasons: ['Poor structure_quality (score * 2 < threshold) [flagged]'] };
+    const text = formatAvoidAlert('X/USDT', withRiskyReason);
+    expect(text).toContain('structure\\_quality');
+    expect(text).toContain('\\* 2');
+    expect(text).toContain('\\[flagged]');
+  });
+});
 
 describe('formatAvoidAlert', () => {
   it('includes the reason and symbol for an AVOID decision', () => {

@@ -26,7 +26,7 @@ function timestamped(candles: Candle[]): Candle[] {
 
 const config: SymbolConfig = {
   atrMin: 0.5, emaDistMin: 0.5, rsiMin: 40, rsiMax: 80,
-  supportLookback: 100, supProximity: 5, minRR: 1.2, volRatioMin: 1.0, maxRiskPct: 0.15,
+  supportLookback: 100, supProximity: 5, minRR: 1.2, volRatioMin: 1.0, maxRiskPct: 15,
 };
 
 describe('computeMetrics', () => {

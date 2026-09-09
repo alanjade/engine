@@ -21,6 +21,7 @@ export interface SymbolConfig {
   supProximity: number;
   minRR: number;
   volRatioMin: number;
+  /** Max stop distance from entry, as a PERCENT (e.g. 5 = 5%) — same scale as atrMin/emaDistMin/supProximity, not a fraction. */
   maxRiskPct: number;
 }
 

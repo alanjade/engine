@@ -4,7 +4,7 @@ import type { SymbolConfig } from '../types/index.js';
 
 const cfg: SymbolConfig = {
   atrMin: 1, emaDistMin: 1, rsiMin: 50, rsiMax: 73,
-  supportLookback: 80, supProximity: 3, minRR: 1.5, volRatioMin: 1.1, maxRiskPct: 0.08,
+  supportLookback: 80, supProximity: 3, minRR: 1.5, volRatioMin: 1.1, maxRiskPct: 8,
 };
 
 describe('calcStopLoss', () => {
@@ -30,7 +30,7 @@ describe('calcStopLoss', () => {
   });
 
   it('rejects when stop distance exceeds maxRiskPct', () => {
-    const tightCfg: SymbolConfig = { ...cfg, maxRiskPct: 0.001 };
+    const tightCfg: SymbolConfig = { ...cfg, maxRiskPct: 0.1 };
     const result = calcStopLoss(105, { price: 100, count: 3 }, 0.6, tightCfg);
     expect(result.ok).toBe(false);
     expect(result.reason).toMatch(/exceeds max acceptable risk/);
