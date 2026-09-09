@@ -71,10 +71,25 @@ export function detectBreakoutRetest(candles: Candle[]): SetupResult {
   const resistances = findResistances(candles.slice(0, -10), 60); // level established before the recent window
   if (!resistances.length) return notDetected(kind, 'No prior resistance level found.');
 
-  // The most significant overhead resistance is the highest one found —
-  // picking "nearest by price" is fragile when price sits well below every
-  // candidate level until the breakout itself.
-  const level = resistances.reduce((max, r) => (r.price > max.price ? r : max));
+  // The level actually broken is the highest overhead resistance that price
+  // genuinely closed above within the recent window — not the single
+  // highest resistance ever found (wrong with multiple stacked levels), not
+  // "nearest by raw distance" (wrong when price sits far below every
+  // candidate), and not "most-touched overhead level" either (a heavily-
+  // touched level price hasn't actually reached yet is still the wrong
+  // pick). Filtering to genuinely-broken overhead levels and taking the
+  // highest of those is what "the breakout level" actually means: the
+  // ceiling price demonstrably overcame, not just any level historically
+  // above it or one that merely has a lot of touches.
+  const priceBeforeWindow = candles[candles.length - 11]!.close;
+  const recentMaxClose = Math.max(...candles.slice(-10).map(c => c.close));
+  const overhead = resistances.filter(r => r.price > priceBeforeWindow);
+  const broken = overhead.filter(r => r.price < recentMaxClose);
+  const level = broken.length
+    ? broken.reduce((max, r) => (r.price > max.price ? r : max))
+    : overhead.length
+      ? overhead.reduce((min, r) => (r.price < min.price ? r : min)) // fallback: nothing confirmed broken yet — nearest candidate
+      : resistances.reduce((max, r) => (r.price > max.price ? r : max)); // fallback: nothing was overhead (shouldn't normally happen)
   const recent = candles.slice(-10);
 
   // Find the breakout candle: first close in the recent window above the level.
@@ -123,10 +138,19 @@ export function detectLiquiditySweep(candles: Candle[]): SetupResult {
   if (!supports.length) return notDetected(kind, 'No swing-low liquidity pool found.');
 
   const recent = candles.slice(-5);
-  // Most significant nearby liquidity pool = the lowest support recently
-  // established (nearest-by-distance is fragile the same way it was for
-  // resistance selection in detectBreakoutRetest).
-  const pool = supports.reduce((min, s) => (s.price < min.price ? s : min));
+  // Mirrors the resistance fix above: the pool actually swept is the
+  // lowest underfoot support that price genuinely wicked below within the
+  // recent window — not the globally lowest support, and not just any
+  // level below price that hasn't actually been touched yet.
+  const priceBeforeWindow = candles[candles.length - 6]!.close;
+  const recentMinLow = Math.min(...candles.slice(-5).map(c => c.low));
+  const underfoot = supports.filter(s => s.price < priceBeforeWindow);
+  const swept = underfoot.filter(s => s.price > recentMinLow);
+  const pool = swept.length
+    ? swept.reduce((min, s) => (s.price < min.price ? s : min))
+    : underfoot.length
+      ? underfoot.reduce((max, s) => (s.price > max.price ? s : max)) // fallback: nothing confirmed swept yet — nearest candidate
+      : supports.reduce((min, s) => (s.price < min.price ? s : min)); // fallback: nothing was underfoot (shouldn't normally happen)
 
   const sweepCandle = recent.find(c => c.low < pool.price);
   if (!sweepCandle) return notDetected(kind, 'No wick below the liquidity pool in the recent window.');

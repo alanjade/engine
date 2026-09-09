@@ -18,4 +18,5 @@ export const ENV = {
   TELEGRAM_CHAT_ID: process.env.TELEGRAM_CHAT_ID ?? '',
   ACCOUNT_EQUITY: parseFloat(process.env.ACCOUNT_EQUITY ?? '10000'),
   RUN_INTERVAL_MINUTES: parseInt(process.env.RUN_INTERVAL_MINUTES ?? '240', 10),
+  EXCHANGE_PROXY_URL: process.env.EXCHANGE_PROXY_URL ?? 'https://swing.ayodejialalade29.workers.dev',
 };

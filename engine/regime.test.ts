@@ -79,17 +79,38 @@ describe('detectRegime', () => {
 
 describe('isTradableForLong', () => {
   it('accepts strong and weak uptrends only', () => {
-    expect(isTradableForLong({ regime: 'STRONG_UPTREND', strength: 80, atrPct: 1, emaSlope: 2, emaDistPct: 2 })).toBe(true);
-    expect(isTradableForLong({ regime: 'WEAK_UPTREND', strength: 60, atrPct: 1, emaSlope: 0.5, emaDistPct: 1 })).toBe(true);
-    expect(isTradableForLong({ regime: 'RANGE', strength: 40, atrPct: 1, emaSlope: 0, emaDistPct: 0 })).toBe(false);
-    expect(isTradableForLong({ regime: 'STRONG_DOWNTREND', strength: 80, atrPct: 1, emaSlope: -2, emaDistPct: -2 })).toBe(false);
+    expect(isTradableForLong({ regime: 'STRONG_UPTREND', strength: 80, atrPct: 1, emaSlope: 2, emaDistPct: 2 , emaBullish: true })).toBe(true);
+    expect(isTradableForLong({ regime: 'WEAK_UPTREND', strength: 60, atrPct: 1, emaSlope: 0.5, emaDistPct: 1 , emaBullish: true })).toBe(true);
+    expect(isTradableForLong({ regime: 'RANGE', strength: 40, atrPct: 1, emaSlope: 0, emaDistPct: 0 , emaBullish: false })).toBe(false);
+    expect(isTradableForLong({ regime: 'STRONG_DOWNTREND', strength: 80, atrPct: 1, emaSlope: -2, emaDistPct: -2 , emaBullish: false })).toBe(false);
+  });
+
+  it('accepts a RANGE read when EMA alignment is still bullish (a pullback, not a real range)', () => {
+    expect(isTradableForLong({ regime: 'RANGE', strength: 40, atrPct: 1, emaSlope: 0.1, emaDistPct: 1.5, emaBullish: true })).toBe(true);
+  });
+
+  it('rejects a RANGE read with no bullish EMA alignment (a genuine range)', () => {
+    expect(isTradableForLong({ regime: 'RANGE', strength: 40, atrPct: 1, emaSlope: 0, emaDistPct: 0, emaBullish: false })).toBe(false);
+  });
+
+  it('detects a real pullback fixture as tradable: sustained uptrend, then a flattening pullback', () => {
+    const uptrend = makeTrend(200, 100, 0.7); // establish strong uptrend
+    const lastPrice = uptrend[uptrend.length - 1]!.close;
+    const pullback = makeTrend(20, lastPrice, -0.1).map((c, i) => ({ ...c, timestamp: (200 + i) * 3_600_000 })); // flattens/dips recent slope
+    const candles = [...uptrend, ...pullback];
+    const result = detectRegime(candles);
+    // Whatever specific regime label it lands on, EMA alignment must still
+    // read bullish (price pulled back slightly, didn't invalidate the trend),
+    // and it must be tradable — that's the actual bug this fixes.
+    expect(result.emaBullish).toBe(true);
+    expect(isTradableForLong(result)).toBe(true);
   });
 });
 
 describe('regimeScoreMultiplier', () => {
   it('gives full weight to strong uptrend and zero to downtrends/high volatility', () => {
-    expect(regimeScoreMultiplier({ regime: 'STRONG_UPTREND', strength: 90, atrPct: 1, emaSlope: 2, emaDistPct: 2 })).toBe(1.0);
-    expect(regimeScoreMultiplier({ regime: 'STRONG_DOWNTREND', strength: 90, atrPct: 1, emaSlope: -2, emaDistPct: -2 })).toBe(0);
-    expect(regimeScoreMultiplier({ regime: 'HIGH_VOLATILITY', strength: 90, atrPct: 6, emaSlope: 0, emaDistPct: 0 })).toBe(0);
+    expect(regimeScoreMultiplier({ regime: 'STRONG_UPTREND', strength: 90, atrPct: 1, emaSlope: 2, emaDistPct: 2 , emaBullish: true })).toBe(1.0);
+    expect(regimeScoreMultiplier({ regime: 'STRONG_DOWNTREND', strength: 90, atrPct: 1, emaSlope: -2, emaDistPct: -2 , emaBullish: false })).toBe(0);
+    expect(regimeScoreMultiplier({ regime: 'HIGH_VOLATILITY', strength: 90, atrPct: 6, emaSlope: 0, emaDistPct: 0 , emaBullish: false })).toBe(0);
   });
 });

@@ -1,10 +1,17 @@
 import { log, warn } from '../utils/logger.js';
+import { ENV } from '../utils/env.js';
 import type { Candle, ExchangeName, Ticker } from '../types/index.js';
 
 // The OHLCV proxy exists because a browser client needs CORS relief.
 // This service runs server-side (Node), so ticker lookups hit exchange
 // REST APIs directly — no proxy, no staleness from reusing a 1D candle close.
-const PROXY = 'https://swing.ayodejialalade29.workers.dev';
+// Configurable via env (falls back to the original deployed worker) so the
+// proxy can be swapped/pointed at a staging instance without a code change.
+const PROXY = ENV.EXCHANGE_PROXY_URL;
+
+const FETCH_TIMEOUT_MS = 8000;
+const MAX_RETRIES = 2; // total attempts = 1 + MAX_RETRIES
+const RETRY_BASE_DELAY_MS = 300;
 
 export type Timeframe = '15m' | '1h' | '4h' | '1d';
 
@@ -44,6 +51,50 @@ function classifyHttpError(status: number, body: string): Error {
   if (status === 451) return new Error('geo_blocked');
   if (status === 429) return new Error('rate_limited');
   return new Error(`HTTP ${status} — ${body.slice(0, 120)}`);
+}
+
+const sleep = (ms: number): Promise<void> => new Promise(resolve => setTimeout(resolve, ms));
+
+/** True for errors worth retrying: network failures, timeouts, rate limits, and 5xx. Not worth retrying: geo-block, bad-request-shaped 4xx — those won't fix themselves. */
+function isRetryable(e: unknown): boolean {
+  if (e instanceof Error) {
+    if (e.name === 'AbortError') return true; // timeout
+    if (e.message === 'rate_limited') return true;
+    if (e.message.startsWith('HTTP 5')) return true;
+    if (e.message === 'fetch failed' || e.message.includes('ECONNRESET') || e.message.includes('ETIMEDOUT')) return true;
+  }
+  return false;
+}
+
+/**
+ * fetch() with a hard timeout and retry-with-backoff for transient failures.
+ * Every exchange/ticker call in this file goes through this instead of a
+ * bare fetch() — previously there was no timeout at all, so a hung
+ * connection to any exchange or the proxy would stall a scan cycle
+ * indefinitely instead of failing over to the next exchange.
+ */
+async function fetchWithRetry(url: string, retries = MAX_RETRIES): Promise<Response> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
+      if (!res.ok && (res.status === 429 || res.status >= 500) && attempt < retries) {
+        const body = await res.text().catch(() => '');
+        lastError = classifyHttpError(res.status, body);
+        await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+        continue;
+      }
+      return res;
+    } catch (e) {
+      lastError = e;
+      if (attempt < retries && isRetryable(e)) {
+        await sleep(RETRY_BASE_DELAY_MS * 2 ** attempt);
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
 // ── OHLCV (via CORS proxy, unchanged behavior) ─────────────────────────────────
@@ -92,7 +143,7 @@ async function fetchOHLCVFromExchange(
 
   log(`Fetching ${symbol} ${timeframe} via ${exchange}`);
 
-  const res = await fetch(url);
+  const res = await fetchWithRetry(url);
   if (!res.ok) {
     const body = await res.text().catch(() => '');
     throw classifyHttpError(res.status, body);
@@ -109,7 +160,16 @@ async function fetchOHLCVFromExchange(
   return normalizeOHLCV(exchange, raw, limit);
 }
 
-function normalizeOHLCV(exchange: ExchangeName, raw: unknown, limit: number): Candle[] {
+export function isValidCandle(c: Candle): boolean {
+  return (
+    Number.isFinite(c.timestamp) && Number.isFinite(c.open) && Number.isFinite(c.high) &&
+    Number.isFinite(c.low) && Number.isFinite(c.close) && Number.isFinite(c.volume) &&
+    c.high >= c.low && c.high >= c.open && c.high >= c.close &&
+    c.low <= c.open && c.low <= c.close && c.volume >= 0
+  );
+}
+
+export function normalizeOHLCV(exchange: ExchangeName, raw: unknown, limit: number): Candle[] {
   let candles: Candle[];
 
   if (exchange === 'bybit') {
@@ -141,6 +201,17 @@ function normalizeOHLCV(exchange: ExchangeName, raw: unknown, limit: number): Ca
     }));
   } else {
     throw new Error(`Unknown exchange: ${exchange satisfies never}`);
+  }
+
+  // Reject any candle with a non-finite field (NaN from a null/malformed
+  // value surviving the unary-`+` conversion above) or an internally
+  // inconsistent OHLC relationship (e.g. high < low) — either would
+  // silently poison every downstream ATR/EMA/RSI/score calculation with
+  // NaN or nonsense values without this filter.
+  const validCount = candles.length;
+  candles = candles.filter(isValidCandle);
+  if (candles.length < validCount) {
+    warn(`${exchange}: dropped ${validCount - candles.length}/${validCount} malformed candle(s).`);
   }
 
   candles.sort((a, b) => a.timestamp - b.timestamp);
@@ -227,7 +298,7 @@ async function fetchTickerFromExchange(symbol: string, exchange: ExchangeName): 
     case 'bybit': {
       const sym = formatSymSlash(symbol, exchange);
       const url = `https://api.bybit.com/v5/market/tickers?category=spot&symbol=${sym}`;
-      const res = await fetch(url);
+      const res = await fetchWithRetry(url);
       if (!res.ok) throw classifyHttpError(res.status, await res.text().catch(() => ''));
       const json = (await res.json()) as { result?: { list?: { lastPrice?: string }[] } };
       const entry = json.result?.list?.[0];
@@ -237,7 +308,7 @@ async function fetchTickerFromExchange(symbol: string, exchange: ExchangeName): 
     case 'okx': {
       const sym = formatSymSlash(symbol, exchange);
       const url = `https://www.okx.com/api/v5/market/ticker?instId=${sym}`;
-      const res = await fetch(url);
+      const res = await fetchWithRetry(url);
       if (!res.ok) throw classifyHttpError(res.status, await res.text().catch(() => ''));
       const json = (await res.json()) as { data?: { last?: string }[] };
       const entry = json.data?.[0];
@@ -247,7 +318,7 @@ async function fetchTickerFromExchange(symbol: string, exchange: ExchangeName): 
     case 'bitget': {
       const sym = formatSymSlash(symbol, exchange);
       const url = `https://api.bitget.com/api/v2/spot/market/tickers?symbol=${sym}`;
-      const res = await fetch(url);
+      const res = await fetchWithRetry(url);
       if (!res.ok) throw classifyHttpError(res.status, await res.text().catch(() => ''));
       const json = (await res.json()) as { data?: { lastPr?: string }[] };
       const entry = json.data?.[0];
@@ -257,7 +328,7 @@ async function fetchTickerFromExchange(symbol: string, exchange: ExchangeName): 
     case 'gate': {
       const sym = formatSymSlash(symbol, exchange);
       const url = `https://api.gateio.ws/api/v4/spot/tickers?currency_pair=${sym}`;
-      const res = await fetch(url);
+      const res = await fetchWithRetry(url);
       if (!res.ok) throw classifyHttpError(res.status, await res.text().catch(() => ''));
       const json = (await res.json()) as { last?: string }[];
       const entry = json[0];

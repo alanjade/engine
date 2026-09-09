@@ -123,11 +123,12 @@ export async function getPosition(symbol: string): Promise<StoredPosition> {
   return data ?? emptyPosition(symbol);
 }
 
-export async function upsertPosition(pos: Partial<StoredPosition> & { symbol: string }): Promise<void> {
-  await query(() =>
+export async function upsertPosition(pos: Partial<StoredPosition> & { symbol: string }): Promise<boolean> {
+  const result = await query(() =>
     db.from('positions').upsert({ ...pos, updated_at: new Date().toISOString() }, { onConflict: 'symbol' }),
     'upsertPosition',
   );
+  return result !== null;
 }
 
 export async function getAllPositions(): Promise<StoredPosition[]> {
@@ -138,11 +139,18 @@ export async function getAllPositions(): Promise<StoredPosition[]> {
   return data ?? [];
 }
 
-export async function countOpenPositions(): Promise<number> {
+/**
+ * Returns null on a DB error rather than 0 — a failed count is not the
+ * same fact as "zero positions are open", and treating it as 0 was making
+ * the exposure cap fail open (a DB outage would let every symbol think it
+ * was clear to enter). Callers must decide what "unknown" means for them;
+ * runner.ts treats it as "assume max exposure, open nothing new."
+ */
+export async function countOpenPositions(): Promise<number | null> {
   const { count, error } = await db
     .from('positions')
     .select('*', { count: 'exact', head: true })
     .eq('status', 'OPEN');
-  if (error) { err('[store:countOpenPositions]', error.message); return 0; }
+  if (error) { err('[store:countOpenPositions]', error.message); return null; }
   return count ?? 0;
 }

@@ -74,6 +74,26 @@ describe('decideExit', () => {
     expect(result.reasons.some(r => r.includes('Take-profit'))).toBe(true);
   });
 
+  it('exits on a wick through the stop even when the candle closes back above it', () => {
+    const candles = [
+      ...timestamped(Array.from({ length: 59 }, () => candle(100))),
+      candle(95, { open: 96, high: 96.5, low: 88, timestamp: 59 * 3_600_000 }), // wicks to 88 (through stop=90), closes at 95
+    ];
+    const result = decideExit(candles, openPosition);
+    expect(result.exit).toBe(true);
+    expect(result.reasons.some(r => r.includes('Stop-loss'))).toBe(true);
+  });
+
+  it('exits on a wick through the target even when the candle closes back below it', () => {
+    const candles = [
+      ...timestamped(Array.from({ length: 59 }, () => candle(100))),
+      candle(115, { open: 114, high: 122, low: 113, timestamp: 59 * 3_600_000 }), // wicks to 122 (through target=120), closes at 115
+    ];
+    const result = decideExit(candles, openPosition);
+    expect(result.exit).toBe(true);
+    expect(result.reasons.some(r => r.includes('Take-profit'))).toBe(true);
+  });
+
   it('does not exit when price is between stop and target with no structural break', () => {
     const candles = timestamped(Array.from({ length: 60 }, (_, i) => candle(100 + (i % 2 === 0 ? 0.1 : -0.1))));
     const result = decideExit(candles, openPosition);

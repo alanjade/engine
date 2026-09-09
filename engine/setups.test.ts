@@ -73,6 +73,27 @@ describe('detectBreakoutRetest', () => {
     const result = detectBreakoutRetest(candles);
     expect(result.detected).toBe(false);
   });
+
+  it('picks the level actually broken in a multi-level market, not the highest or most-touched level overall', () => {
+    // Two real overhead resistance levels: 106 (weaker, fewer touches) and
+    // 112 (more touches, but price never actually reaches it this cycle).
+    // The correct pick is 106 — the one price genuinely closed above.
+    const candles: Candle[] = [];
+    for (let i = 0; i < 66; i++) {
+      const base = 95 + Math.sin(i / 3) * 4; // oscillates ~91-99, always closes under 100
+      const touch106 = i % 11 === 5;
+      const touch112 = i % 9 === 4;
+      const high = touch112 ? 112 : touch106 ? 106 : base + 2;
+      candles.push(candle(base, { high, low: base - 2 }));
+    }
+    candles.push(candle(108, { open: 99, high: 109, low: 98.5, volume: 5000 })); // breaks 106, well short of 112
+    candles.push(candle(105, { open: 107.5, high: 107.8, low: 104.8, volume: 1200 })); // retest of 106
+    candles.push(candle(107, { open: 105, high: 107.5, low: 104.7, volume: 1300 })); // retest holds
+
+    const result = detectBreakoutRetest(timestamped(candles));
+    expect(result.detected).toBe(true);
+    expect(result.reason).toContain('106');
+  });
 });
 
 describe('detectLiquiditySweep', () => {
@@ -103,6 +124,25 @@ describe('detectLiquiditySweep', () => {
     candles.push(candle(93, { open: 95, high: 95.2, low: 92, volume: 1500 }));
     const result = detectLiquiditySweep(timestamped(candles));
     expect(result.detected).toBe(false);
+  });
+
+  it('picks the pool actually swept in a multi-level market, not the globally lowest support', () => {
+    // Two real underfoot support pools: 94 (weaker) and 88 (more touches,
+    // but price never wicks that low this cycle). Correct pick is 94.
+    const candles: Candle[] = [];
+    for (let i = 0; i < 66; i++) {
+      const base = 100 + Math.sin(i / 3) * 4; // oscillates ~96-104, always above 94
+      const touch94 = i % 11 === 5;
+      const touch88 = i % 9 === 4;
+      const low = touch88 ? 88 : touch94 ? 94 : base - 2;
+      candles.push(candle(base, { high: base + 2, low }));
+    }
+    candles.push(candle(95.5, { open: 96, high: 96.2, low: 93.2, volume: 1500 })); // sweeps 94, well short of 88
+    candles.push(candle(98, { open: 95, high: 98.2, low: 94.8, volume: 1200 })); // reclaim
+
+    const result = detectLiquiditySweep(timestamped(candles));
+    expect(result.detected).toBe(true);
+    expect(result.reason).toContain('94.0');
   });
 });
 

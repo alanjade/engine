@@ -43,6 +43,7 @@ export interface RegimeResult {
   atrPct: number;
   emaSlope: number; // % change in EMA50 over the lookback window
   emaDistPct: number; // % distance between EMA50 and EMA200
+  emaBullish: boolean; // EMA50>EMA200 alignment, independent of short-term slope — survives a pullback's flattened slope
 }
 
 export interface StoredPosition {
@@ -299,6 +300,7 @@ export interface PositionUpdateResult {
   position: ManagedPosition;
   actions: string[];
   closed: boolean; // true once remainingPct reaches 0
+  fillPrice: number | null; // the actual level touched (stop or a TP tier), not the candle close — null when nothing closed this update
 }
 
 export interface Opportunity {

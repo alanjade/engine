@@ -23,15 +23,24 @@ export function openPosition(entry: number, stopLoss: number, tp1: number, tp2: 
  * trend-failure exit. Returns a new ManagedPosition (never mutates the
  * input) plus the list of actions taken this update, so the caller can
  * log/alert on exactly what happened.
+ *
+ * Execution assumption (documented, not left implicit): stop-loss and
+ * take-profit triggers check the candle's LOW/HIGH (wick), not its close —
+ * a long can wick through a level intrabar and close back on the other
+ * side, and a close-only check would silently miss that fill. Fill price
+ * is assumed to be exactly the level touched (no slippage modeled). When a
+ * candle's wick could plausibly hit both the stop and a target in the same
+ * bar, the stop is checked first — the conservative assumption, since OHLC
+ * data alone can't tell you which happened first intrabar.
  */
 export function updatePosition(position: ManagedPosition, candles: Candle[]): PositionUpdateResult {
   const actions: string[] = [];
   let p = { ...position };
 
-  if (!candles.length) return { position: p, actions, closed: p.remainingPct <= 0 };
+  if (!candles.length) return { position: p, actions, closed: p.remainingPct <= 0, fillPrice: null };
 
   const last = candles[candles.length - 1]!;
-  const price = last.close;
+  const price = last.close; // still used for non-level signals below (emergency drop %, trend failure) — those are close-based by nature, not a specific price level being touched
   p.highestPrice = Math.max(p.highestPrice, last.high);
 
   // Emergency exit: a single-candle crash this severe overrides everything
@@ -40,7 +49,7 @@ export function updatePosition(position: ManagedPosition, candles: Candle[]): Po
   if (dropPct >= EMERGENCY_DROP_PCT) {
     actions.push(`EMERGENCY_EXIT: single-candle drop of ${dropPct.toFixed(1)}%.`);
     p.remainingPct = 0;
-    return { position: p, actions, closed: true };
+    return { position: p, actions, closed: true, fillPrice: price };
   }
 
   // Trend failure: regime has flipped against the position.
@@ -49,24 +58,25 @@ export function updatePosition(position: ManagedPosition, candles: Candle[]): Po
     if (regime.regime === 'STRONG_DOWNTREND' || regime.regime === 'WEAK_DOWNTREND') {
       actions.push(`TREND_FAILURE_EXIT: regime now ${regime.regime}.`);
       p.remainingPct = 0;
-      return { position: p, actions, closed: true };
+      return { position: p, actions, closed: true, fillPrice: price };
     }
   }
 
-  // Stop-loss / final target.
-  if (price <= p.stopLoss) {
+  // Stop-loss / final target — wick-based (see doc comment above), stop
+  // checked first as the conservative same-candle assumption.
+  if (last.low <= p.stopLoss) {
     actions.push('STOP_LOSS_HIT');
     p.remainingPct = 0;
-    return { position: p, actions, closed: true };
+    return { position: p, actions, closed: true, fillPrice: p.stopLoss };
   }
-  if (price >= p.tp3) {
+  if (last.high >= p.tp3) {
     actions.push('FINAL_TP_HIT');
     p.remainingPct = 0;
-    return { position: p, actions, closed: true };
+    return { position: p, actions, closed: true, fillPrice: p.tp3 };
   }
 
   // Partial TP1 + move to break-even.
-  if (!p.tp1Hit && price >= p.tp1) {
+  if (!p.tp1Hit && last.high >= p.tp1) {
     p.tp1Hit = true;
     p.remainingPct -= TP1_CLOSE_PCT;
     actions.push(`PARTIAL_TP1: closed ${TP1_CLOSE_PCT}%, ${p.remainingPct}% remaining.`);
@@ -78,7 +88,7 @@ export function updatePosition(position: ManagedPosition, candles: Candle[]): Po
   }
 
   // Partial TP2 — only after TP1, locks in stop at TP1 level.
-  if (p.tp1Hit && !p.tp2Hit && price >= p.tp2) {
+  if (p.tp1Hit && !p.tp2Hit && last.high >= p.tp2) {
     p.tp2Hit = true;
     p.remainingPct -= TP2_CLOSE_PCT;
     actions.push(`PARTIAL_TP2: closed ${TP2_CLOSE_PCT}%, ${p.remainingPct}% remaining.`);
@@ -104,5 +114,5 @@ export function updatePosition(position: ManagedPosition, candles: Candle[]): Po
     }
   }
 
-  return { position: p, actions, closed: p.remainingPct <= 0 };
+  return { position: p, actions, closed: p.remainingPct <= 0, fillPrice: null };
 }

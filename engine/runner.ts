@@ -26,7 +26,14 @@ export async function runAll(): Promise<void> {
   log('=== Scan started ===');
   for (const symbol of SYMBOLS) {
     try {
-      await runSymbol(symbol, await countOpenPositions());
+      const openCount = await countOpenPositions();
+      if (openCount === null) {
+        warn(`[${symbol}] Could not read open position count (DB error) — treating as max exposure reached, skipping new entries this cycle.`);
+      }
+      // null → Infinity: fails validateMaxExposure's `count < max` check
+      // unconditionally, i.e. "assume max exposure" rather than "assume
+      // zero open" (the old default, which failed the cap open).
+      await runSymbol(symbol, openCount ?? Infinity);
     } catch (error) {
       warn(`[${symbol}] Error: ${error instanceof Error ? error.message : String(error)}`);
     }
@@ -133,13 +140,21 @@ async function runSymbol(symbol: string, openPositionCount: number): Promise<voi
   const size = calcPositionSize(ENV.ACCOUNT_EQUITY, decision.entry, decision.stopLoss);
   const managed = openPosition(decision.entry, decision.stopLoss, tp1, tp2, tp3);
 
-  await upsertPosition({
+  const persisted = await upsertPosition({
     symbol, status: 'OPEN', entry: managed.entry, stop_loss: managed.stopLoss,
     take_profit: managed.tp3, size, remaining: managed.remainingPct,
     tp1: managed.tp1, tp2: managed.tp2, tp3: managed.tp3,
     highest_price: managed.highestPrice, tp1_hit: managed.tp1Hit,
     tp2_hit: managed.tp2Hit, break_even_activated: managed.breakEvenActivated,
   });
+  if (!persisted) {
+    // Fail-closed: never alert an ENTER whose position wasn't actually
+    // recorded — that's exactly the phantom-position scenario (Telegram
+    // says we're in a trade, the store doesn't, exposure cap is now wrong).
+    warn(`[${symbol}] Failed to persist ENTER position — suppressing alert. Not entered.`);
+    return;
+  }
+
   await saveDecision({
     symbol, state: 'ENTER', entry: managed.entry, stopLoss: managed.stopLoss,
     takeProfit: managed.tp3, confidence: decision.score?.total ?? null,
@@ -162,14 +177,25 @@ async function manageOpenPosition(symbol: string, storedPosition: StoredPosition
   const closed = result.closed || structuralExit.exit;
 
   if (closed) {
-    const exitPrice = candles4h[candles4h.length - 1]!.close;
+    const exitPrice = result.fillPrice ?? candles4h[candles4h.length - 1]!.close;
     const reasons = [...result.actions, ...structuralExit.reasons];
     log(`[${symbol}] Position closed: ${reasons.join(' ')}`);
 
-    await upsertPosition({
+    const persisted = await upsertPosition({
       symbol, status: 'CLOSED', entry: storedPosition.entry, stop_loss: null,
       take_profit: null, size: storedPosition.size, remaining: 0,
     });
+    if (!persisted) {
+      // Fail-closed here too: if the CLOSED write didn't land, the stored
+      // row still says OPEN, so the next cycle re-evaluates from the same
+      // still-open state and re-triggers this same exit naturally — a
+      // built-in retry. Alerting EXIT now, before that's confirmed, risks
+      // saying "closed" to Telegram while the store still thinks it's live
+      // (and would re-alert every cycle until the write eventually lands).
+      warn(`[${symbol}] Failed to persist position close — suppressing EXIT alert this cycle, will retry next scan.`);
+      return;
+    }
+
     await saveDecision({
       symbol, state: 'EXIT', entry: managed.entry, stopLoss: result.position.stopLoss,
       takeProfit: managed.tp3, confidence: null, reason: reasons.join(' '), exitPrice,
@@ -183,7 +209,7 @@ async function manageOpenPosition(symbol: string, storedPosition: StoredPosition
 
   if (result.actions.length > 0) {
     log(`[${symbol}] Position update: ${result.actions.join(' ')}`);
-    await upsertPosition({
+    const persisted = await upsertPosition({
       symbol, status: 'OPEN', entry: storedPosition.entry, stop_loss: result.position.stopLoss,
       take_profit: storedPosition.take_profit, size: storedPosition.size,
       remaining: result.position.remainingPct,
@@ -191,6 +217,13 @@ async function manageOpenPosition(symbol: string, storedPosition: StoredPosition
       highest_price: result.position.highestPrice, tp1_hit: result.position.tp1Hit,
       tp2_hit: result.position.tp2Hit, break_even_activated: result.position.breakEvenActivated,
     });
+    if (!persisted) {
+      // Same fail-closed reasoning: don't announce a stop move / partial
+      // that the store doesn't actually reflect yet — next cycle recomputes
+      // from the still-stale stored position and will naturally retry.
+      warn(`[${symbol}] Failed to persist position update — suppressing alert this cycle, will retry next scan.`);
+      return;
+    }
     await sendAlert(formatPositionUpdateAlert(symbol, result.position, result.actions));
     return;
   }

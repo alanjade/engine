@@ -138,14 +138,25 @@ function avoidResult(
  * stop requires tracking the position's highest-price-since-entry, which is
  * state this function doesn't have (and shouldn't own).
  */
+/**
+ * EXIT logic for an open position. Deliberately does not include trailing
+ * stops — that's Phase 12 (position management) territory, since a trailing
+ * stop requires tracking the position's highest-price-since-entry, which is
+ * state this function doesn't have (and shouldn't own).
+ *
+ * Stop/target checks use the candle's low/high (wick), not its close — see
+ * the same documented assumption in position-management.ts's updatePosition.
+ * Structure/regime checks remain close-based since those are legitimately
+ * about where price settled, not a specific level being touched intrabar.
+ */
 export function decideExit(candles4h: Candle[], position: Position): ExitDecision {
   const reasons: string[] = [];
   if (!candles4h.length) return { exit: false, reasons: ['No candle data.'] };
 
-  const price = candles4h[candles4h.length - 1]!.close;
+  const last = candles4h[candles4h.length - 1]!;
 
-  if (price <= position.stop_loss) reasons.push('Stop-loss reached.');
-  if (price >= position.take_profit) reasons.push('Take-profit reached.');
+  if (last.low <= position.stop_loss) reasons.push('Stop-loss reached.');
+  if (last.high >= position.take_profit) reasons.push('Take-profit reached.');
 
   const structure = analyzeStructure(candles4h, 2);
   if (structure.lastEvent === 'BEARISH_CHOCH') reasons.push('Structure invalidated (bearish CHoCH).');

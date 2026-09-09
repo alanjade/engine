@@ -112,4 +112,39 @@ describe('updatePosition', () => {
     expect(result.position).toEqual(position);
     expect(result.closed).toBe(false);
   });
+
+  it('triggers the stop-loss on a wick through it even when the candle closes back above (wick, not close)', () => {
+    const position = openPosition(100, 90, 110, 120, 130);
+    // Wicks down to 88 (through the 90 stop) but closes back at 95.
+    const candles = timestamped([candle(95, { open: 96, high: 96.5, low: 88 })]);
+    const result = updatePosition(position, candles);
+    expect(result.closed).toBe(true);
+    expect(result.actions).toContain('STOP_LOSS_HIT');
+    expect(result.fillPrice).toBe(90); // filled at the stop level itself, not the wick low or the close
+  });
+
+  it('does not trigger the stop on a candle that stays entirely above it', () => {
+    const position = openPosition(100, 90, 110, 120, 130);
+    const candles = timestamped([candle(95, { open: 94, high: 96, low: 92 })]);
+    const result = updatePosition(position, candles);
+    expect(result.closed).toBe(false);
+  });
+
+  it('triggers TP1 on a wick through it even when the candle closes back below (wick, not close)', () => {
+    const position = openPosition(100, 90, 110, 120, 130);
+    // Wicks up to 112 (through the 110 TP1) but closes back at 105.
+    const candles = timestamped([candle(105, { open: 104, high: 112, low: 103 })]);
+    const result = updatePosition(position, candles);
+    expect(result.position.tp1Hit).toBe(true);
+    expect(result.actions.some(a => a.startsWith('PARTIAL_TP1'))).toBe(true);
+  });
+
+  it('reports fillPrice as the exact level touched for FINAL_TP_HIT, not the wick high', () => {
+    const position = openPosition(100, 90, 110, 120, 130);
+    const candles = timestamped([candle(125, { open: 122, high: 135, low: 121 })]); // wicks well past tp3=130
+    const result = updatePosition(position, candles);
+    expect(result.closed).toBe(true);
+    expect(result.actions).toContain('FINAL_TP_HIT');
+    expect(result.fillPrice).toBe(130);
+  });
 });
