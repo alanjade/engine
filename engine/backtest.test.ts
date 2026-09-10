@@ -5,7 +5,7 @@ import type { Candle, SymbolConfig } from '../types/index.js';
 function trade(overrides: Partial<BacktestTrade>): BacktestTrade {
   return {
     entryIndex: 0, exitIndex: 1, entry: 100, stopLoss: 95, tp1: 105, tp2: 110, tp3: 120,
-    pnlPct: 0, rMultiple: null, actions: [], setup: null, grade: null, score: null,
+    pnlPct: 0, grossPnlPct: 0, costPct: 0, rMultiple: null, actions: [], setup: null, grade: null, score: null,
     ...overrides,
   };
 }
@@ -134,4 +134,5 @@ describe('runBacktest', () => {
       expect(result.trades[i]!.entryIndex).toBeGreaterThan(result.trades[i - 1]!.exitIndex);
     }
   });
+
 });

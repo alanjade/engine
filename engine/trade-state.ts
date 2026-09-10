@@ -137,12 +137,6 @@ function avoidResult(
  * stops — that's Phase 12 (position management) territory, since a trailing
  * stop requires tracking the position's highest-price-since-entry, which is
  * state this function doesn't have (and shouldn't own).
- */
-/**
- * EXIT logic for an open position. Deliberately does not include trailing
- * stops — that's Phase 12 (position management) territory, since a trailing
- * stop requires tracking the position's highest-price-since-entry, which is
- * state this function doesn't have (and shouldn't own).
  *
  * Stop/target checks use the candle's low/high (wick), not its close — see
  * the same documented assumption in position-management.ts's updatePosition.

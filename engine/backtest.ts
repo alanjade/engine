@@ -10,8 +10,12 @@ export interface BacktestTrade {
   tp1: number;
   tp2: number;
   tp3: number;
-  /** Weighted across partial closes (TP1/TP2 fractions at their own prices), not just the final exit price. */
+  /** Weighted across partial closes (TP1/TP2 fractions at their own prices), not just the final exit price. Net of fees, slippage, and funding — see BacktestOptions. */
   pnlPct: number;
+  /** pnlPct before fees/slippage/funding were deducted, for comparing against the old gross-only numbers. */
+  grossPnlPct: number;
+  /** Total cost (fees + slippage + funding) deducted, as a percent of notional. Always >= 0. */
+  costPct: number;
   rMultiple: number | null;
   actions: string[];
   setup: string | null;
@@ -23,7 +27,33 @@ export interface BacktestOptions {
   /** 4H candles of history required before the first entry check. Must be >= what decideEntry itself requires (220) or every check trivially AVOIDs on "Insufficient candle history." */
   minCandles4h?: number;
   minCandles1d?: number;
+  /**
+   * Taker fee per fill, as a PERCENT of notional (e.g. 0.05 = 0.05%), charged
+   * on entry and on each partial/full close. Default matches typical perp
+   * taker fees (Binance/Bybit USDT-M ≈ 0.04-0.05%).
+   */
+  feePctPerFill?: number;
+  /**
+   * Slippage per fill, as a PERCENT of notional, applied the same way as
+   * feePctPerFill (entry + every close). Market orders on the sizes this
+   * engine trades rarely fill at the exact signal price; this is a flat
+   * estimate, not a book-depth model.
+   */
+  slippagePctPerFill?: number;
+  /**
+   * Perpetual funding rate, as a PERCENT of notional PER DAY, charged
+   * continuously on whatever fraction of the position remains open,
+   * regardless of direction (this backtest doesn't model funding sign vs
+   * position side — treats it as a constant cost of holding, which is
+   * conservative for the common case of longing into positive funding).
+   * Default 0.03%/day ≈ the typical 0.01% per-8h funding rate.
+   */
+  fundingPctPerDay?: number;
 }
+
+const DEFAULT_FEE_PCT_PER_FILL = 0.05;
+const DEFAULT_SLIPPAGE_PCT_PER_FILL = 0.05;
+const DEFAULT_FUNDING_PCT_PER_DAY = 0.03;
 
 export interface BacktestMetrics {
   totalTrades: number;
@@ -43,7 +73,7 @@ export interface BacktestMetrics {
 export interface BacktestResult {
   trades: BacktestTrade[];
   /** A position still open when candle data ran out — excluded from metrics (its outcome is unknown), reported separately. */
-  openAtEnd: Omit<BacktestTrade, 'pnlPct' | 'rMultiple'> | null;
+  openAtEnd: Omit<BacktestTrade, 'pnlPct' | 'grossPnlPct' | 'costPct' | 'rMultiple'> | null;
   metrics: BacktestMetrics;
 }
 
@@ -76,6 +106,10 @@ export function runBacktest(
 ): BacktestResult {
   const minCandles4h = opts.minCandles4h ?? 220;
   const minCandles1d = opts.minCandles1d ?? 100;
+  const feePctPerFill = opts.feePctPerFill ?? DEFAULT_FEE_PCT_PER_FILL;
+  const slippagePctPerFill = opts.slippagePctPerFill ?? DEFAULT_SLIPPAGE_PCT_PER_FILL;
+  const fundingPctPerDay = opts.fundingPctPerDay ?? DEFAULT_FUNDING_PCT_PER_DAY;
+  const costPctPerFill = feePctPerFill + slippagePctPerFill;
   const trades: BacktestTrade[] = [];
   let openAtEnd: BacktestResult['openAtEnd'] = null;
 
@@ -99,17 +133,30 @@ export function runBacktest(
     let managed = openPosition(entry, initialStopLoss, tp1, tp2, tp3);
     let prevRemaining = managed.remainingPct;
     let realizedPnlPct = 0;
+    // Entry fill itself costs fee+slippage on the full position, charged up front.
+    let costPct = costPctPerFill;
     const allActions: string[] = [];
     let exitIndex = i;
     let closed = false;
+    let prevTimestamp = candles4h[i]!.timestamp;
 
     let j = i + 1;
     while (j < candles4h.length && !closed) {
       const window = candles4h.slice(0, j + 1);
+      const bar = window[window.length - 1]!;
       const prevManaged = managed;
       const result = updatePosition(managed, window);
       managed = result.position;
       allActions.push(...result.actions);
+
+      // Funding accrues on whatever fraction was still open through this bar,
+      // for however long this bar actually spans (real timestamp gap, not an
+      // assumed 4H — handles gaps/irregular candles without over/undercharging).
+      const barHours = (bar.timestamp - prevTimestamp) / (60 * 60 * 1000);
+      if (barHours > 0 && prevManaged.remainingPct > 0) {
+        costPct += (prevManaged.remainingPct / 100) * fundingPctPerDay * (barHours / 24);
+      }
+      prevTimestamp = bar.timestamp;
 
       const closedFractionPct = prevRemaining - managed.remainingPct;
       if (closedFractionPct > 0) {
@@ -120,6 +167,8 @@ export function runBacktest(
           : window[window.length - 1]!.close; // EMERGENCY_EXIT / TREND_FAILURE_EXIT
 
         realizedPnlPct += (closedFractionPct / 100) * ((closePrice - entry) / entry) * 100;
+        // This fill (partial or final close) also costs fee+slippage, scaled to the fraction closed.
+        costPct += (closedFractionPct / 100) * costPctPerFill;
       }
       prevRemaining = managed.remainingPct;
 
@@ -128,7 +177,8 @@ export function runBacktest(
     }
 
     const initialRiskPct = ((entry - initialStopLoss) / entry) * 100;
-    const rMultiple = closed && initialRiskPct > 0 ? realizedPnlPct / initialRiskPct : null;
+    const netPnlPct = realizedPnlPct - costPct;
+    const rMultiple = closed && initialRiskPct > 0 ? netPnlPct / initialRiskPct : null;
 
     const tradeBase = {
       entryIndex: i, exitIndex, entry, stopLoss: initialStopLoss, tp1, tp2, tp3,
@@ -137,7 +187,7 @@ export function runBacktest(
     };
 
     if (closed) {
-      trades.push({ ...tradeBase, pnlPct: realizedPnlPct, rMultiple });
+      trades.push({ ...tradeBase, pnlPct: netPnlPct, grossPnlPct: realizedPnlPct, costPct, rMultiple });
       i = exitIndex + 1;
     } else {
       // Ran out of candle data mid-trade — record it separately, don't score an unknown outcome.
